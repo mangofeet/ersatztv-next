@@ -8,8 +8,10 @@ use crate::config::ChannelConfig;
 use crate::error::ChannelError;
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+
     if let Err(err) = run() {
-        eprintln!("{err}");
+        log::error!("{err}");
         std::process::exit(1);
     }
 }
@@ -35,9 +37,7 @@ fn run() -> Result<(), ChannelError> {
         PlayoutItemSource::Local { path } => {
             // probe current item
             let probe_result = probe::probe(&path)?;
-            println!("probe result:");
-            println!("{probe_result}");
-            println!();
+            log::debug!("probe result: {probe_result}");
 
             let output_folder = std::path::Path::new(&channel_config.output.folder);
             let output_file = output_folder
@@ -51,9 +51,7 @@ fn run() -> Result<(), ChannelError> {
 
             // generate pipeline
             let pipeline_result = pipeline::generate_pipeline(probe_result, output_file)?;
-            println!("pipeline result:");
-            println!("{pipeline_result}");
-            println!();
+            log::debug!("pipeline result: {pipeline_result}");
 
             // stream current item
             let ffmpeg_output = std::process::Command::new("ffmpeg")
@@ -85,7 +83,7 @@ fn get_current_item(
         playout_folder = parent.join(&playout_folder);
     }
 
-    println!("playout folder is {}", playout_folder.to_string_lossy());
+    log::debug!("playout folder is {}", playout_folder.to_string_lossy());
 
     // find first playout JSON in folder
     let entries = std::fs::read_dir(playout_folder)
@@ -98,8 +96,7 @@ fn get_current_item(
             .into_string()
             .map_err(|_| ChannelError::ChannelConfigFailure(String::from("os string error")))?;
         if path.ends_with(".json") {
-            println!("playout JSON is {path}");
-            println!();
+            log::debug!("playout JSON is {path}");
 
             // load playout JSON
             let playout_result = ersatztv_playout::playout::from_file(&path)?;

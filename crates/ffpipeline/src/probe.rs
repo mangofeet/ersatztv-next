@@ -119,7 +119,7 @@ pub fn probe(path: &str) -> Result<ProbeResult, FFPipelineError> {
 
     match deserialized {
         Err(err) => {
-            eprintln!("{err}");
+            log::error!("{err}");
             Err(FFPipelineError::ProbeFailedToParse)
         }
         Ok(output) => {

@@ -46,7 +46,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -59,6 +59,7 @@ jobs:
 
   build_and_upload_linux:
     name: Build & Upload Linux
+    needs: lint
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -80,7 +81,7 @@ jobs:
             target: linux-arm64
             rust_target: aarch64-unknown-linux-gnu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 

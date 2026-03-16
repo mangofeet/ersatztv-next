@@ -1,15 +1,15 @@
 [workspace]
 members = [
+  "crates/ersatztv",
+  "crates/ersatztv-channel",
+  "crates/ersatztv-playout",
   "crates/ffpipeline",
-  "crates/channel",
-  "crates/lineup",
-  "crates/playout",
 ]
 resolver = "3"
 
 [workspace.dependencies]
 env_logger = "0.11"
-ersatztv-playout = { path = "crates/playout" }
+ersatztv-playout = { path = "crates/ersatztv-playout" }
 ffpipeline = { path = "crates/ffpipeline" }
 log = "0.4"
 serde = { version = "1", features = ["derive"] }

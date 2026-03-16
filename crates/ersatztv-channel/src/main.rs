@@ -17,12 +17,12 @@ fn main() {
 }
 
 fn run() -> Result<(), ChannelError> {
-    // get channel config path
+    // get ersatztv-channel config path
     let config_path = std::env::args()
         .nth(1)
         .ok_or(ChannelError::ChannelConfigRequired)?;
 
-    // load channel config
+    // load ersatztv-channel config
     let channel_config = config::from_file(&config_path)?;
 
     // find current item
@@ -73,7 +73,7 @@ fn get_current_item(
     config_path: &str,
     channel_config: &ChannelConfig,
 ) -> Result<PlayoutItem, ChannelError> {
-    // TODO: better algorithm for finding appropriate playout JSON file
+    // TODO: better algorithm for finding appropriate ersatztv-playout JSON file
 
     let mut playout_folder = std::path::PathBuf::from(&channel_config.playout.folder);
     if playout_folder.is_relative() {
@@ -83,9 +83,9 @@ fn get_current_item(
         playout_folder = parent.join(&playout_folder);
     }
 
-    log::debug!("playout folder is {}", playout_folder.to_string_lossy());
+    log::debug!("ersatztv-playout folder is {}", playout_folder.to_string_lossy());
 
-    // find first playout JSON in folder
+    // find first ersatztv-playout JSON in folder
     let entries = std::fs::read_dir(playout_folder)
         .map_err(|e| ChannelError::ChannelConfigFailure(e.to_string()))?;
     for entry in entries {
@@ -96,9 +96,9 @@ fn get_current_item(
             .into_string()
             .map_err(|_| ChannelError::ChannelConfigFailure(String::from("os string error")))?;
         if path.ends_with(".json") {
-            log::debug!("playout JSON is {path}");
+            log::debug!("ersatztv-playout JSON is {path}");
 
-            // load playout JSON
+            // load ersatztv-playout JSON
             let playout_result = ersatztv_playout::playout::from_file(&path)?;
 
             // find current item

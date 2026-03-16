@@ -17,35 +17,35 @@ pub enum ChannelError {
 
 impl From<PlayoutError> for ChannelError {
     fn from(value: PlayoutError) -> Self {
-        ChannelError::PlayoutJsonLoadFailure(value)
+        Self::PlayoutJsonLoadFailure(value)
     }
 }
 
 impl From<FFPipelineError> for ChannelError {
     fn from(value: FFPipelineError) -> Self {
-        ChannelError::PipelineError(value)
+        Self::PipelineError(value)
     }
 }
 
 impl std::fmt::Display for ChannelError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ChannelError::ChannelConfigRequired => write!(f, "channel config is required as arg"),
+            ChannelError::ChannelConfigRequired => write!(f, "ersatztv-channel config is required as arg"),
             ChannelError::ChannelConfigFailure(err) => {
-                write!(f, "unable to load channel config: {err}")
+                write!(f, "unable to load ersatztv-channel config: {err}")
             }
             ChannelError::ChannelConfigOutputFolderRequired => {
-                write!(f, "channel config output folder is required")
+                write!(f, "ersatztv-channel config output folder is required")
             }
             ChannelError::PlayoutJsonLoadFailure(err) => write!(f, "{err}"),
             ChannelError::PlayoutJsonNoItem => {
-                write!(f, "unable to find current item in playout JSON")
+                write!(f, "unable to find current item in ersatztv-playout JSON")
             }
             ChannelError::PlayoutJsonSingleSourceRequired => {
-                write!(f, "only single sources are supported as playout items")
+                write!(f, "only single sources are supported as ersatztv-playout items")
             }
             ChannelError::PlayoutJsonLocalSourceRequired => {
-                write!(f, "only local sources are supported as playout items")
+                write!(f, "only local sources are supported as ersatztv-playout items")
             }
             ChannelError::PipelineError(err) => write!(f, "{err}"),
             ChannelError::StreamFailure => write!(f, "stream failed"),

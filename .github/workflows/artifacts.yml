@@ -57,27 +57,22 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D clippy::all
 
-  build_and_upload_linux:
-    name: Build & Upload Linux
-    needs: lint
+  build_linux:
+    name: Build Linux
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
-            kind: linux
             target: linux-x64
             rust_target: x86_64-unknown-linux-gnu
           - os: ubuntu-latest
-            kind: linux
             target: linux-musl-x64
             rust_target: x86_64-unknown-linux-musl
           - os: ubuntu-latest
-            kind: linux
             target: linux-arm
             rust_target: armv7-unknown-linux-gnueabihf
           - os: ubuntu-latest
-            kind: linux
             target: linux-arm64
             rust_target: aarch64-unknown-linux-gnu
     steps:
@@ -110,6 +105,25 @@ jobs:
           # Delete output directory
           rm -r "$release_name"
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.target }}
+          path: "*.tar.gz"
+
+  publish_linux:
+    name: Publish Linux
+    needs: [lint, build_linux]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [linux-x64, linux-musl-x64, linux-arm, linux-arm64]
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: ${{ matrix.target }}
+
       - name: Delete old release assets
         uses: mknejp/delete-release-assets@v1
         if: ${{ inputs.release_tag == 'develop' }}
@@ -124,6 +138,6 @@ jobs:
         with:
           prerelease: false
           tag_name: ${{ inputs.release_tag }}
-          files: "${{ env.RELEASE_NAME }}.tar.gz"
+          files: "*.tar.gz"
         env:
           GITHUB_TOKEN: ${{ secrets.gh_token }}

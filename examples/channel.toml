@@ -1,0 +1,6 @@
+[playout]
+# relative to channel.toml
+folder = "./playout"
+
+[output]
+folder = "/tmp/hls"

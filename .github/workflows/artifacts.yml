@@ -102,8 +102,8 @@ jobs:
           # Build everything
           cargo build --release --all-features
           mkdir "$release_name"
-          mv target/release/ersatztv-channel "$release_name/"
-          mv target/release/ersatztv-lineup "$release_name/"
+          mv target/${{ matrix.rust_target }}/release/ersatztv-channel "$release_name/"
+          mv target/${{ matrix.rust_target }}/release/ersatztv-lineup "$release_name/"
           tar czvf "${release_name}.tar.gz" "$release_name"
 
           # Delete output directory

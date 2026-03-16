@@ -134,10 +134,6 @@ jobs:
             | xargs -r -I{} gh release delete-asset ${{ inputs.release_tag }} {} --yes
 
       - name: Publish
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: false
-          tag_name: ${{ inputs.release_tag }}
-          files: "*.tar.gz"
         env:
-          GITHUB_TOKEN: ${{ secrets.gh_token }}
+          GH_TOKEN: ${{ secrets.gh_token }}
+        run: gh release upload ${{ inputs.release_tag }} *.tar.gz

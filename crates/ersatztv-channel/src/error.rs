@@ -30,22 +30,24 @@ impl From<FFPipelineError> for ChannelError {
 impl std::fmt::Display for ChannelError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ChannelError::ChannelConfigRequired => write!(f, "ersatztv-channel config is required as arg"),
+            ChannelError::ChannelConfigRequired => {
+                write!(f, "channel config is required as arg")
+            }
             ChannelError::ChannelConfigFailure(err) => {
-                write!(f, "unable to load ersatztv-channel config: {err}")
+                write!(f, "unable to load channel config: {err}")
             }
             ChannelError::ChannelConfigOutputFolderRequired => {
-                write!(f, "ersatztv-channel config output folder is required")
+                write!(f, "channel config output folder is required")
             }
             ChannelError::PlayoutJsonLoadFailure(err) => write!(f, "{err}"),
             ChannelError::PlayoutJsonNoItem => {
-                write!(f, "unable to find current item in ersatztv-playout JSON")
+                write!(f, "unable to find current item in playout JSON")
             }
             ChannelError::PlayoutJsonSingleSourceRequired => {
-                write!(f, "only single sources are supported as ersatztv-playout items")
+                write!(f, "only single sources are supported as playout items")
             }
             ChannelError::PlayoutJsonLocalSourceRequired => {
-                write!(f, "only local sources are supported as ersatztv-playout items")
+                write!(f, "only local sources are supported as playout items")
             }
             ChannelError::PipelineError(err) => write!(f, "{err}"),
             ChannelError::StreamFailure => write!(f, "stream failed"),

@@ -9,9 +9,11 @@ pub enum PlayoutError {
 impl std::fmt::Display for PlayoutError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            PlayoutError::PlayoutJsonDoesNotExist => write!(f, "ersatztv-playout json does not exist"),
+            PlayoutError::PlayoutJsonDoesNotExist => {
+                write!(f, "playout JSON does not exist")
+            }
             PlayoutError::PlayoutJsonLoadError(error) => {
-                write!(f, "failed to load ersatztv-playout json file: {}", error)
+                write!(f, "failed to load playout JSON file: {}", error)
             }
         }
     }

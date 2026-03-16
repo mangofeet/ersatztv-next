@@ -46,8 +46,13 @@ fn run() -> Result<(), ChannelError> {
                 .into_string()
                 .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
 
-            empty_folder(output_folder)
-                .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
+            if output_folder.exists() {
+                empty_folder(output_folder)
+                    .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
+            } else {
+                std::fs::create_dir(output_folder)
+                    .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
+            }
 
             // generate pipeline
             let pipeline_result = pipeline::generate_pipeline(probe_result, output_file)?;

@@ -129,11 +129,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.gh_token }}
         run: |
-          gh release view ${{ inputs.release_tag }} --json assets --jq '.assets[].name' \
+          gh release view ${{ inputs.release_tag }} --json assets --jq '.assets[].name' --repo ${{ github.repository }} \
             | grep '${{ matrix.target }}.tar.gz' \
-            | xargs -r -I{} gh release delete-asset ${{ inputs.release_tag }} {} --yes
+            | xargs -r -I{} gh release delete-asset ${{ inputs.release_tag }} {} --yes --repo ${{ github.repository }}
 
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.gh_token }}
-        run: gh release upload ${{ inputs.release_tag }} *.tar.gz
+        run: gh release upload ${{ inputs.release_tag }} *.tar.gz --repo ${{ github.repository }}

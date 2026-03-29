@@ -43,8 +43,9 @@ fn port_default() -> u16 {
     8409
 }
 
-pub fn from_file(path: &str) -> Result<LineupConfig, LineupError> {
-    let config_string = std::fs::read_to_string(path)
+pub async fn from_file(path: &str) -> Result<LineupConfig, LineupError> {
+    let config_string = tokio::fs::read_to_string(path)
+        .await
         .map_err(|e| LineupError::LineupConfigFailure(e.to_string()))?;
     let lineup_config: LineupConfig = toml::from_str(&config_string)
         .map_err(|e| LineupError::LineupConfigFailure(e.to_string()))?;

@@ -56,7 +56,7 @@ async fn run() -> Result<(), LineupError> {
         .ok_or(LineupError::LineupConfigRequired)?;
 
     // load lineup config
-    let lineup_config = config::from_file(&config_path)?;
+    let lineup_config = config::from_file(&config_path).await?;
 
     let mut channels: Vec<ChannelModel> = Vec::with_capacity(lineup_config.channels.len());
     for channel in lineup_config.channels {

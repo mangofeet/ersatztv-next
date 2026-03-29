@@ -28,18 +28,18 @@ async fn run() -> Result<(), LineupError> {
     // load lineup config
     let lineup_config = config::from_file(&config_path)?;
 
+    let addr = format!(
+        "{}:{}",
+        lineup_config.server.bind_address, lineup_config.server.port
+    );
+
     let app = Router::new()
-        .route("/", get(root))
         .route("/channels/{number}", get(stream))
         .with_state(Arc::new(lineup_config));
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8409").await?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
-}
-
-async fn root() -> String {
-    String::from("ErsatzTV")
 }
 
 async fn stream(

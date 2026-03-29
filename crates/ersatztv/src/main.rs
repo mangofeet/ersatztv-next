@@ -6,6 +6,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::{Router, routing::get};
+use tokio::signal;
 
 use crate::config::ChannelConfig;
 use crate::error::LineupError;
@@ -17,6 +18,28 @@ pub async fn main() {
     if let Err(err) = run().await {
         log::error!("{err}");
         std::process::exit(1);
+    }
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c().await.expect("failed to install ctrl+c handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
     }
 }
 
@@ -51,7 +74,10 @@ async fn run() -> Result<(), LineupError> {
         .route("/channels/{number}", get(stream))
         .with_state(Arc::new(channels));
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
     Ok(())
 }
 

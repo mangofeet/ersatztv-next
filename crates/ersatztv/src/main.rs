@@ -117,7 +117,7 @@ async fn stream(
     if let Some(proc) = active.get(&number) {
         return Ok(axum::response::Redirect::temporary(&proc.multi_variant));
     }
-    
+
     let child = tokio::process::Command::new(channel_binary_path()?)
         .arg("--output-folder")
         .arg(&channel.output_folder)
@@ -137,7 +137,9 @@ async fn stream(
 
     let ready_file = channel.output_folder.join(READY_FILE_NAME);
     if !wait_for_ready(&ready_file, Duration::from_secs(10)).await {
-        Err(LineupError::ChannelNotFound(String::from("channel timeout")))
+        Err(LineupError::ChannelNotFound(String::from(
+            "channel timeout",
+        )))
     } else {
         Ok(axum::response::Redirect::temporary(&multi_variant))
     }
@@ -210,7 +212,7 @@ async fn fix_content_types(
     response
 }
 
-async fn wait_for_ready(path: &std::path::PathBuf, timeout: Duration) -> bool {
+async fn wait_for_ready(path: &std::path::Path, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
         if path.exists() {

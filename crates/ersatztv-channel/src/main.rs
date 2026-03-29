@@ -60,10 +60,12 @@ async fn run() -> Result<(), ChannelError> {
             }
 
             if output_folder.exists() {
-                empty_folder(output_folder).await
+                empty_folder(output_folder)
+                    .await
                     .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
             } else {
-                tokio::fs::create_dir(output_folder).await
+                tokio::fs::create_dir(output_folder)
+                    .await
                     .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
             }
 

@@ -4,7 +4,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum LineupError {
-    #[error("io error")]
+    #[error("io error {0}")]
     Io(#[from] std::io::Error),
 
     #[error("lineup config is required as arg")]

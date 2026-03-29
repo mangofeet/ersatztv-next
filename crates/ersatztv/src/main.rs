@@ -86,6 +86,7 @@ async fn run() -> Result<(), LineupError> {
             "/hls/channels",
             tower_http::services::ServeDir::new(&lineup_config.output.folder),
         )
+        .layer(axum::middleware::from_fn(fix_content_types))
         .with_state(Arc::new(state));
 
     axum::serve(listener, app)
@@ -182,4 +183,18 @@ fn channel_binary_path() -> Result<std::path::PathBuf, LineupError> {
         .to_path_buf();
     path.push("ersatztv-channel");
     Ok(path)
+}
+
+async fn fix_content_types(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let is_m3u8 = request.uri().path().ends_with(".m3u8");
+    let mut response = next.run(request).await;
+    if is_m3u8 && let Ok(value) = "application/vnd.apple.mpegurl".parse() {
+        response
+            .headers_mut()
+            .insert(axum::http::header::CONTENT_TYPE, value);
+    }
+    response
 }

@@ -2,7 +2,7 @@ mod config;
 mod error;
 
 use clap::Parser;
-use ersatztv_core::READY_FILE_NAME;
+use ersatztv_core::{READY_FILE_NAME, empty_folder};
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource};
 use ffpipeline::{pipeline, probe};
 
@@ -17,23 +17,24 @@ struct Args {
     output_folder: std::path::PathBuf,
 }
 
-fn main() {
+#[tokio::main]
+pub async fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
 
-    if let Err(err) = run() {
+    if let Err(err) = run().await {
         log::error!("{err}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<(), ChannelError> {
+async fn run() -> Result<(), ChannelError> {
     let args = Args::parse();
 
     // load channel config
-    let channel_config = config::from_file(&args.config_path)?;
+    let channel_config = config::from_file(&args.config_path).await?;
 
     // find current item
-    let current_item = get_current_item(&args.config_path, &channel_config)?;
+    let current_item = get_current_item(&args.config_path, &channel_config).await?;
 
     let current_source = current_item
         .source
@@ -55,14 +56,14 @@ fn run() -> Result<(), ChannelError> {
 
             let ready_file = output_folder.join(READY_FILE_NAME);
             if ready_file.exists() {
-                std::fs::remove_file(&ready_file)?;
+                tokio::fs::remove_file(&ready_file).await?;
             }
 
             if output_folder.exists() {
-                empty_folder(output_folder)
+                empty_folder(output_folder).await
                     .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
             } else {
-                std::fs::create_dir(output_folder)
+                tokio::fs::create_dir(output_folder).await
                     .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
             }
 
@@ -71,26 +72,27 @@ fn run() -> Result<(), ChannelError> {
             log::debug!("pipeline result: {pipeline_result}");
 
             // TODO: this should be async, will need to poll for segments to exist
-            
+
             // stream current item
-            let ffmpeg_output = std::process::Command::new("ffmpeg")
+            let ffmpeg_output = tokio::process::Command::new("ffmpeg")
                 .args(pipeline_result.args())
                 .output()
+                .await
                 .map_err(|_| ChannelError::StreamFailure)?;
 
             if !ffmpeg_output.status.success() {
                 return Err(ChannelError::StreamFailure);
             }
-            
-            std::fs::write(&ready_file, b"")?;
-            
+
+            tokio::fs::write(&ready_file, b"").await?;
+
             Ok(())
         }
         _ => Err(ChannelError::PlayoutJsonLocalSourceRequired),
     }
 }
 
-fn get_current_item(
+async fn get_current_item(
     config_path: &std::path::PathBuf,
     channel_config: &ChannelConfig,
 ) -> Result<PlayoutItem, ChannelError> {
@@ -107,10 +109,10 @@ fn get_current_item(
     log::debug!("playout folder is {}", playout_folder.to_string_lossy());
 
     // find first playout JSON in folder
-    let entries = std::fs::read_dir(playout_folder)
+    let mut entries = tokio::fs::read_dir(playout_folder)
+        .await
         .map_err(|e| ChannelError::ChannelConfigFailure(e.to_string()))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| ChannelError::ChannelConfigFailure(e.to_string()))?;
+    while let Ok(Some(entry)) = entries.next_entry().await {
         let path = entry
             .path()
             .into_os_string()
@@ -120,7 +122,7 @@ fn get_current_item(
             log::debug!("playout JSON is {path}");
 
             // load playout JSON
-            let playout_result = ersatztv_playout::playout::from_file(&path)?;
+            let playout_result = ersatztv_playout::playout::from_file(&path).await?;
 
             // find current item
             return playout_result
@@ -135,21 +137,4 @@ fn get_current_item(
     Err(ChannelError::ChannelConfigFailure(String::from(
         "found no files",
     )))
-}
-
-fn empty_folder(output_folder: &std::path::Path) -> Result<(), std::io::Error> {
-    let entries = std::fs::read_dir(output_folder)?;
-    for entry in entries {
-        let entry = entry?;
-        if let Ok(file_type) = entry.file_type() {
-            if file_type.is_dir() {
-                empty_folder(&entry.path())?;
-                std::fs::remove_dir(entry.path())?;
-            } else {
-                std::fs::remove_file(entry.path())?;
-            }
-        }
-    }
-
-    Ok(())
 }

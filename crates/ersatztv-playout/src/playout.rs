@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::io::BufReader;
-
 use serde::Deserialize;
 
 use crate::error::PlayoutError;
@@ -49,11 +46,12 @@ pub struct PlayoutLoadResult {
     // TODO: start, finish
 }
 
-pub fn from_file(path: &str) -> Result<PlayoutLoadResult, PlayoutError> {
-    let file = File::open(path).map_err(|e| PlayoutError::PlayoutJsonLoadError(e.to_string()))?;
-    let reader = BufReader::new(file);
+pub async fn from_file(path: &str) -> Result<PlayoutLoadResult, PlayoutError> {
+    let contents = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|e| PlayoutError::PlayoutJsonLoadError(e.to_string()))?;
 
-    let playout: Playout = serde_json::from_reader(reader)
+    let playout: Playout = serde_json::from_str(&contents)
         .map_err(|e| PlayoutError::PlayoutJsonLoadError(e.to_string()))?;
 
     Ok(PlayoutLoadResult { playout })

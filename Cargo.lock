@@ -267,6 +267,7 @@ dependencies = [
  "log",
  "serde",
  "thiserror",
+ "tokio",
  "toml",
 ]
 
@@ -284,6 +285,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

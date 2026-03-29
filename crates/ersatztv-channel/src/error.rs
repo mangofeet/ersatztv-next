@@ -1,56 +1,33 @@
-use std::fmt::Formatter;
-
 use ersatztv_playout::error::PlayoutError;
 use ffpipeline::error::FFPipelineError;
+use thiserror::Error;
 
+#[derive(Error, Debug)]
 pub enum ChannelError {
+    #[error("channel config is required as arg")]
     ChannelConfigRequired,
+
+    #[error("unable to load channel config: {0}")]
     ChannelConfigFailure(String),
+
+    #[error("channel config output folder is required")]
     ChannelConfigOutputFolderRequired,
-    PlayoutJsonLoadFailure(PlayoutError),
+
+    #[error("{0}")]
+    PlayoutJsonLoadFailure(#[from] PlayoutError),
+
+    #[error("unable to find current item in playout JSON")]
     PlayoutJsonNoItem,
+
+    #[error("only single sources are supported as playout items")]
     PlayoutJsonSingleSourceRequired,
+
+    #[error("only local sources are supported as playout items")]
     PlayoutJsonLocalSourceRequired,
-    PipelineError(FFPipelineError),
+
+    #[error("{0}")]
+    PipelineError(#[from] FFPipelineError),
+
+    #[error("stream failed")]
     StreamFailure,
-}
-
-impl From<PlayoutError> for ChannelError {
-    fn from(value: PlayoutError) -> Self {
-        Self::PlayoutJsonLoadFailure(value)
-    }
-}
-
-impl From<FFPipelineError> for ChannelError {
-    fn from(value: FFPipelineError) -> Self {
-        Self::PipelineError(value)
-    }
-}
-
-impl std::fmt::Display for ChannelError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ChannelError::ChannelConfigRequired => {
-                write!(f, "channel config is required as arg")
-            }
-            ChannelError::ChannelConfigFailure(err) => {
-                write!(f, "unable to load channel config: {err}")
-            }
-            ChannelError::ChannelConfigOutputFolderRequired => {
-                write!(f, "channel config output folder is required")
-            }
-            ChannelError::PlayoutJsonLoadFailure(err) => write!(f, "{err}"),
-            ChannelError::PlayoutJsonNoItem => {
-                write!(f, "unable to find current item in playout JSON")
-            }
-            ChannelError::PlayoutJsonSingleSourceRequired => {
-                write!(f, "only single sources are supported as playout items")
-            }
-            ChannelError::PlayoutJsonLocalSourceRequired => {
-                write!(f, "only local sources are supported as playout items")
-            }
-            ChannelError::PipelineError(err) => write!(f, "{err}"),
-            ChannelError::StreamFailure => write!(f, "stream failed"),
-        }
-    }
 }

@@ -9,4 +9,5 @@ ersatztv-playout = { workspace = true }
 ffpipeline = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 toml = { workspace = true }

@@ -82,6 +82,10 @@ async fn run() -> Result<(), LineupError> {
 
     let app = Router::new()
         .route("/channels/{number}", get(stream))
+        .nest_service(
+            "/hls/channels",
+            tower_http::services::ServeDir::new(&lineup_config.output.folder),
+        )
         .with_state(Arc::new(state));
 
     axum::serve(listener, app)
@@ -114,11 +118,12 @@ async fn stream(
         .spawn()
         .map_err(LineupError::Io)?;
 
-    let multi_variant = format!("/hls/channels/{number}.m3u8");
+    // not actually multi-variant, this is the variant playlist
+    let multi_variant = format!("/hls/channels/{number}/live.m3u8");
     active.insert(
         number,
         ChannelProcess {
-            child,
+            _child: child,
             multi_variant: multi_variant.clone(),
         },
     );
@@ -133,7 +138,7 @@ struct ChannelModel {
 }
 
 struct ChannelProcess {
-    child: Child,
+    _child: Child,
     multi_variant: String,
 }
 
@@ -157,14 +162,14 @@ fn validate_channel(
                 )))?;
         channel_config = parent.join(&channel_config).canonicalize()?;
     }
-    
+
     let mut output_folder = std::path::PathBuf::from(output_folder);
     output_folder = output_folder.join(&channel.number);
-    
+
     Ok(ChannelModel {
         number: channel.number,
         config: channel_config,
-        output_folder 
+        output_folder,
     })
 }
 

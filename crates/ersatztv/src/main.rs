@@ -1,12 +1,15 @@
 mod config;
 mod error;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::{Router, routing::get};
+use tokio::process::Child;
 use tokio::signal;
+use tokio::sync::Mutex;
 
 use crate::config::ChannelConfig;
 use crate::error::LineupError;
@@ -23,7 +26,9 @@ pub async fn main() {
 
 async fn shutdown_signal() {
     let ctrl_c = async {
-        signal::ctrl_c().await.expect("failed to install ctrl+c handler");
+        signal::ctrl_c()
+            .await
+            .expect("failed to install ctrl+c handler");
     };
 
     #[cfg(unix)]
@@ -63,6 +68,11 @@ async fn run() -> Result<(), LineupError> {
         }
     }
 
+    let state = LineupState {
+        channels,
+        active: Mutex::new(HashMap::new()),
+    };
+
     let addr = format!(
         "{}:{}",
         lineup_config.server.bind_address, lineup_config.server.port
@@ -72,7 +82,7 @@ async fn run() -> Result<(), LineupError> {
 
     let app = Router::new()
         .route("/channels/{number}", get(stream))
-        .with_state(Arc::new(channels));
+        .with_state(Arc::new(state));
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -83,23 +93,50 @@ async fn run() -> Result<(), LineupError> {
 
 async fn stream(
     Path(number): Path<String>,
-    State(config): State<Arc<Vec<ChannelModel>>>,
+    State(state): State<Arc<LineupState>>,
 ) -> Result<impl IntoResponse, LineupError> {
-    let channel_config = config
+    let channel = state
+        .channels
         .iter()
         .find(|c| c.number == number)
-        .ok_or(LineupError::ChannelNotFound(number))?;
+        .ok_or(LineupError::ChannelNotFound(number.clone()))?;
 
-    Ok(format!(
-        "Channel {} is configured at {}",
-        channel_config.number,
-        channel_config.config.to_string_lossy()
-    ))
+    let mut active = state.active.lock().await;
+
+    if let Some(proc) = active.get(&number) {
+        return Ok(axum::response::Redirect::temporary(&proc.multi_variant));
+    }
+
+    let child = tokio::process::Command::new(channel_binary_path()?)
+        .arg(&channel.config)
+        .spawn()
+        .map_err(LineupError::Io)?;
+
+    let multi_variant = format!("/hls/channels/{number}.m3u8");
+    active.insert(
+        number,
+        ChannelProcess {
+            child,
+            multi_variant: multi_variant.clone(),
+        },
+    );
+
+    Ok(axum::response::Redirect::temporary(&multi_variant))
 }
 
 struct ChannelModel {
     number: String,
     config: std::path::PathBuf,
+}
+
+struct ChannelProcess {
+    child: Child,
+    multi_variant: String,
+}
+
+struct LineupState {
+    channels: Vec<ChannelModel>,
+    active: Mutex<HashMap<String, ChannelProcess>>,
 }
 
 fn validate_channel(
@@ -120,4 +157,15 @@ fn validate_channel(
         number: channel.number,
         config: channel_config,
     })
+}
+
+fn channel_binary_path() -> Result<std::path::PathBuf, LineupError> {
+    let mut path = std::env::current_exe()?
+        .parent()
+        .ok_or(LineupError::ChannelNotFound(String::from(
+            "unable to locate channel binary",
+        )))?
+        .to_path_buf();
+    path.push("ersatztv-channel");
+    Ok(path)
 }

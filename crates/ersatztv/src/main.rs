@@ -7,7 +7,7 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::{Router, routing::get};
 
-use crate::config::LineupConfig;
+use crate::config::ChannelConfig;
 use crate::error::LineupError;
 
 #[tokio::main]
@@ -28,32 +28,70 @@ async fn run() -> Result<(), LineupError> {
     // load lineup config
     let lineup_config = config::from_file(&config_path)?;
 
+    let mut channels: Vec<ChannelModel> = Vec::with_capacity(lineup_config.channels.len());
+    for channel in lineup_config.channels {
+        match validate_channel(&config_path, channel) {
+            Ok(channel_config) => {
+                channels.push(channel_config);
+            }
+            Err(err) => {
+                log::error!("{err}")
+            }
+        }
+    }
+
     let addr = format!(
         "{}:{}",
         lineup_config.server.bind_address, lineup_config.server.port
     );
 
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+
     let app = Router::new()
         .route("/channels/{number}", get(stream))
-        .with_state(Arc::new(lineup_config));
+        .with_state(Arc::new(channels));
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }
 
 async fn stream(
     Path(number): Path<String>,
-    State(config): State<Arc<LineupConfig>>,
+    State(config): State<Arc<Vec<ChannelModel>>>,
 ) -> Result<impl IntoResponse, LineupError> {
     let channel_config = config
-        .channels
         .iter()
         .find(|c| c.number == number)
         .ok_or(LineupError::ChannelNotFound(number))?;
 
     Ok(format!(
         "Channel {} is configured at {}",
-        channel_config.number, channel_config.config
+        channel_config.number,
+        channel_config.config.to_string_lossy()
     ))
+}
+
+struct ChannelModel {
+    number: String,
+    config: std::path::PathBuf,
+}
+
+fn validate_channel(
+    config_path: &str,
+    channel: ChannelConfig,
+) -> Result<ChannelModel, LineupError> {
+    let mut channel_config = std::path::PathBuf::from(&channel.config);
+    if channel_config.is_relative() {
+        let parent =
+            std::path::Path::new(config_path)
+                .parent()
+                .ok_or(LineupError::LineupConfigFailure(String::from(
+                    "failed to find parent of config",
+                )))?;
+        channel_config = parent.join(&channel_config).canonicalize()?;
+    }
+    Ok(ChannelModel {
+        number: channel.number,
+        config: channel_config,
+    })
 }

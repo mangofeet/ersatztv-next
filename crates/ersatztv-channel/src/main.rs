@@ -85,7 +85,7 @@ fn get_current_item(
         let parent = std::path::Path::new(config_path).parent().ok_or(
             ChannelError::ChannelConfigFailure(String::from("failed to find parent of config")),
         )?;
-        playout_folder = parent.join(&playout_folder);
+        playout_folder = parent.join(&playout_folder).canonicalize()?;
     }
 
     log::debug!("playout folder is {}", playout_folder.to_string_lossy());

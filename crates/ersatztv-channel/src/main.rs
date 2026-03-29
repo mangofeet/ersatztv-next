@@ -2,6 +2,7 @@ mod config;
 mod error;
 
 use clap::Parser;
+use ersatztv_core::READY_FILE_NAME;
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource};
 use ffpipeline::{pipeline, probe};
 
@@ -52,6 +53,11 @@ fn run() -> Result<(), ChannelError> {
                 .into_string()
                 .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
 
+            let ready_file = output_folder.join(READY_FILE_NAME);
+            if ready_file.exists() {
+                std::fs::remove_file(&ready_file)?;
+            }
+
             if output_folder.exists() {
                 empty_folder(output_folder)
                     .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
@@ -64,6 +70,8 @@ fn run() -> Result<(), ChannelError> {
             let pipeline_result = pipeline::generate_pipeline(probe_result, output_file)?;
             log::debug!("pipeline result: {pipeline_result}");
 
+            // TODO: this should be async, will need to poll for segments to exist
+            
             // stream current item
             let ffmpeg_output = std::process::Command::new("ffmpeg")
                 .args(pipeline_result.args())
@@ -73,7 +81,9 @@ fn run() -> Result<(), ChannelError> {
             if !ffmpeg_output.status.success() {
                 return Err(ChannelError::StreamFailure);
             }
-
+            
+            std::fs::write(&ready_file, b"")?;
+            
             Ok(())
         }
         _ => Err(ChannelError::PlayoutJsonLocalSourceRequired),

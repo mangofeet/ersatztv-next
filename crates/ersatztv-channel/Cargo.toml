@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 clap = { workspace = true }
 env_logger = { workspace = true }
+ersatztv-core = { workspace = true }
 ersatztv-playout = { workspace = true }
 ffpipeline = { workspace = true }
 log = { workspace = true }

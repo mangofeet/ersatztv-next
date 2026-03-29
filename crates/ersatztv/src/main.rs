@@ -3,10 +3,12 @@ mod error;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::{Router, routing::get};
+use ersatztv_core::{READY_FILE_NAME, empty_folder};
 use tokio::process::Child;
 use tokio::signal;
 use tokio::sync::Mutex;
@@ -68,6 +70,10 @@ async fn run() -> Result<(), LineupError> {
         }
     }
 
+    log::debug!("loaded {} channel definitions", channels.len());
+
+    empty_folder(std::path::Path::new(&lineup_config.output.folder)).await?;
+
     let state = LineupState {
         channels,
         active: Mutex::new(HashMap::new()),
@@ -81,9 +87,9 @@ async fn run() -> Result<(), LineupError> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     let app = Router::new()
-        .route("/channels/{number}", get(stream))
+        .route("/channel/{number}", get(stream))
         .nest_service(
-            "/hls/channels",
+            "/session",
             tower_http::services::ServeDir::new(&lineup_config.output.folder),
         )
         .layer(axum::middleware::from_fn(fix_content_types))
@@ -111,7 +117,7 @@ async fn stream(
     if let Some(proc) = active.get(&number) {
         return Ok(axum::response::Redirect::temporary(&proc.multi_variant));
     }
-
+    
     let child = tokio::process::Command::new(channel_binary_path()?)
         .arg("--output-folder")
         .arg(&channel.output_folder)
@@ -120,7 +126,7 @@ async fn stream(
         .map_err(LineupError::Io)?;
 
     // not actually multi-variant, this is the variant playlist
-    let multi_variant = format!("/hls/channels/{number}/live.m3u8");
+    let multi_variant = format!("/session/{number}/live.m3u8");
     active.insert(
         number,
         ChannelProcess {
@@ -129,7 +135,12 @@ async fn stream(
         },
     );
 
-    Ok(axum::response::Redirect::temporary(&multi_variant))
+    let ready_file = channel.output_folder.join(READY_FILE_NAME);
+    if !wait_for_ready(&ready_file, Duration::from_secs(10)).await {
+        Err(LineupError::ChannelNotFound(String::from("channel timeout")))
+    } else {
+        Ok(axum::response::Redirect::temporary(&multi_variant))
+    }
 }
 
 struct ChannelModel {
@@ -197,4 +208,17 @@ async fn fix_content_types(
             .insert(axum::http::header::CONTENT_TYPE, value);
     }
     response
+}
+
+async fn wait_for_ready(path: &std::path::PathBuf, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if path.exists() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await
+    }
 }

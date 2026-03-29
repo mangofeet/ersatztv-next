@@ -246,6 +246,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "env_logger",
+ "ersatztv-core",
  "log",
  "serde",
  "thiserror",
@@ -260,12 +261,20 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "env_logger",
+ "ersatztv-core",
  "ersatztv-playout",
  "ffpipeline",
  "log",
  "serde",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "ersatztv-core"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]

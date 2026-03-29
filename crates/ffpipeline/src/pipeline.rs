@@ -119,6 +119,7 @@ pub struct Pipeline {
 
 impl Pipeline {
     fn full(probe_result: ProbeResult, output: String) -> Pipeline {
+        // for now, limit to 30s
         let duration = match probe_result.duration {
             Some(probed_duration) => probed_duration.min(std::time::Duration::from_secs(30)),
             None => std::time::Duration::from_secs(30),

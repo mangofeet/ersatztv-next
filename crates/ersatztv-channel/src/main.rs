@@ -1,11 +1,20 @@
 mod config;
 mod error;
 
+use clap::Parser;
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource};
 use ffpipeline::{pipeline, probe};
 
 use crate::config::ChannelConfig;
 use crate::error::ChannelError;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    config_path: std::path::PathBuf,
+    #[arg(short, long)]
+    output_folder: std::path::PathBuf,
+}
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
@@ -17,16 +26,13 @@ fn main() {
 }
 
 fn run() -> Result<(), ChannelError> {
-    // get channel config path
-    let config_path = std::env::args()
-        .nth(1)
-        .ok_or(ChannelError::ChannelConfigRequired)?;
+    let args = Args::parse();
 
     // load channel config
-    let channel_config = config::from_file(&config_path)?;
+    let channel_config = config::from_file(&args.config_path)?;
 
     // find current item
-    let current_item = get_current_item(&config_path, &channel_config)?;
+    let current_item = get_current_item(&args.config_path, &channel_config)?;
 
     let current_source = current_item
         .source
@@ -39,7 +45,7 @@ fn run() -> Result<(), ChannelError> {
             let probe_result = probe::probe(&path)?;
             log::debug!("probe result: {probe_result}");
 
-            let output_folder = std::path::Path::new(&channel_config.output.folder);
+            let output_folder = std::path::Path::new(&args.output_folder);
             let output_file = output_folder
                 .join("live.m3u8")
                 .into_os_string()
@@ -75,7 +81,7 @@ fn run() -> Result<(), ChannelError> {
 }
 
 fn get_current_item(
-    config_path: &str,
+    config_path: &std::path::PathBuf,
     channel_config: &ChannelConfig,
 ) -> Result<PlayoutItem, ChannelError> {
     // TODO: better algorithm for finding appropriate playout JSON file

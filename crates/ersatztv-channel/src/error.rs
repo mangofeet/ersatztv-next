@@ -4,9 +4,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ChannelError {
-    #[error("channel config is required as arg")]
-    ChannelConfigRequired,
-
     #[error("unable to load channel config: {0}")]
     ChannelConfigFailure(String),
 

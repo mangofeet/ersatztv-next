@@ -58,7 +58,7 @@ async fn run() -> Result<(), LineupError> {
 
     let mut channels: Vec<ChannelModel> = Vec::with_capacity(lineup_config.channels.len());
     for channel in lineup_config.channels {
-        match validate_channel(&config_path, channel) {
+        match validate_channel(&config_path, &lineup_config.output.folder, channel) {
             Ok(channel_config) => {
                 channels.push(channel_config);
             }
@@ -108,6 +108,8 @@ async fn stream(
     }
 
     let child = tokio::process::Command::new(channel_binary_path()?)
+        .arg("--output-folder")
+        .arg(&channel.output_folder)
         .arg(&channel.config)
         .spawn()
         .map_err(LineupError::Io)?;
@@ -127,6 +129,7 @@ async fn stream(
 struct ChannelModel {
     number: String,
     config: std::path::PathBuf,
+    output_folder: std::path::PathBuf,
 }
 
 struct ChannelProcess {
@@ -141,6 +144,7 @@ struct LineupState {
 
 fn validate_channel(
     config_path: &str,
+    output_folder: &str,
     channel: ChannelConfig,
 ) -> Result<ChannelModel, LineupError> {
     let mut channel_config = std::path::PathBuf::from(&channel.config);
@@ -153,9 +157,14 @@ fn validate_channel(
                 )))?;
         channel_config = parent.join(&channel_config).canonicalize()?;
     }
+    
+    let mut output_folder = std::path::PathBuf::from(output_folder);
+    output_folder = output_folder.join(&channel.number);
+    
     Ok(ChannelModel {
         number: channel.number,
         config: channel_config,
+        output_folder 
     })
 }
 

@@ -6,6 +6,7 @@ use crate::error::LineupError;
 pub struct LineupConfig {
     #[serde(default = "server_config_default")]
     pub server: ServerConfig,
+    pub output: OutputConfig,
     pub channels: Vec<ChannelConfig>,
 }
 
@@ -15,6 +16,11 @@ pub struct ServerConfig {
     pub bind_address: String,
     #[serde(default = "port_default")]
     pub port: u16,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct OutputConfig {
+    pub folder: String,
 }
 
 #[derive(Deserialize, Clone)]

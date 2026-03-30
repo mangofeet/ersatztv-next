@@ -3,12 +3,12 @@ mod error;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::{Router, routing::get};
-use ersatztv_core::{READY_FILE_NAME, empty_folder};
+use ersatztv_core::{READY_FILE_NAME, empty_folder, wait_for_file};
 use tokio::process::Child;
 use tokio::signal;
 use tokio::sync::Mutex;
@@ -136,7 +136,7 @@ async fn stream(
     );
 
     let ready_file = channel.output_folder.join(READY_FILE_NAME);
-    if !wait_for_ready(&ready_file, Duration::from_secs(10)).await {
+    if !wait_for_file(&ready_file, Duration::from_secs(10)).await {
         Err(LineupError::ChannelNotFound(String::from(
             "channel timeout",
         )))
@@ -210,17 +210,4 @@ async fn fix_content_types(
             .insert(axum::http::header::CONTENT_TYPE, value);
     }
     response
-}
-
-async fn wait_for_ready(path: &std::path::Path, timeout: Duration) -> bool {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if path.exists() {
-            return true;
-        }
-        if Instant::now() >= deadline {
-            return false;
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await
-    }
 }

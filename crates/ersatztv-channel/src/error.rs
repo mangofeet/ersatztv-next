@@ -28,6 +28,6 @@ pub enum ChannelError {
     #[error("{0}")]
     PipelineError(#[from] FFPipelineError),
 
-    #[error("stream failed")]
-    StreamFailure,
+    #[error("stream failed: {0}")]
+    StreamFailure(String),
 }

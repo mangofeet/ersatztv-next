@@ -1,8 +1,10 @@
 mod config;
 mod error;
 
+use std::time::Duration;
+
 use clap::Parser;
-use ersatztv_core::{READY_FILE_NAME, empty_folder};
+use ersatztv_core::{READY_FILE_NAME, empty_folder, wait_for_file};
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource};
 use ffpipeline::{pipeline, probe};
 
@@ -73,22 +75,39 @@ async fn run() -> Result<(), ChannelError> {
             let pipeline_result = pipeline::generate_pipeline(probe_result, output_file)?;
             log::debug!("pipeline result: {pipeline_result}");
 
-            // TODO: this should be async, will need to poll for segments to exist
-
             // stream current item
-            let ffmpeg_output = tokio::process::Command::new("ffmpeg")
+            let mut ffmpeg_child = tokio::process::Command::new("ffmpeg")
                 .args(pipeline_result.args())
-                .output()
-                .await
-                .map_err(|_| ChannelError::StreamFailure)?;
+                .spawn()
+                .map_err(|_| ChannelError::StreamFailure(String::from("failed to spawn ffmpeg")))?;
 
-            if !ffmpeg_output.status.success() {
-                return Err(ChannelError::StreamFailure);
+            let ready = tokio::select! {
+                status = ffmpeg_child.wait() => {
+                    let status = status.map_err(|_| ChannelError::StreamFailure(String::from("ffmpeg exit code")))?;
+                    if !status.success() {
+                        return Err(ChannelError::StreamFailure(String::from("ffmpeg exit code")));
+                    }
+
+                    true
+                }
+
+                // wait for segment #4 to exist
+                result = async {
+                    let target_file = output_folder.join("live3.ts");
+                    return wait_for_file(&target_file, Duration::from_secs(30)).await;
+                } => {
+                    result
+                }
+            };
+
+            if ready {
+                tokio::fs::write(&ready_file, b"").await?;
+                Ok(())
+            } else {
+                Err(ChannelError::StreamFailure(String::from(
+                    "not ready in time",
+                )))
             }
-
-            tokio::fs::write(&ready_file, b"").await?;
-
-            Ok(())
         }
         _ => Err(ChannelError::PlayoutJsonLocalSourceRequired),
     }

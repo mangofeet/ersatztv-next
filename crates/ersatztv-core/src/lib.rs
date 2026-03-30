@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use tokio::fs::{read_dir, remove_dir, remove_file};
 
 pub const READY_FILE_NAME: &str = ".ready";
@@ -16,4 +18,17 @@ pub async fn empty_folder(output_folder: &std::path::Path) -> Result<(), std::io
     }
 
     Ok(())
+}
+
+pub async fn wait_for_file(path: &std::path::Path, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if path.exists() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await
+    }
 }

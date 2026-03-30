@@ -167,7 +167,7 @@ struct LineupState {
 }
 
 fn validate_channel(
-    config_path: &std::path::PathBuf,
+    config_path: &std::path::Path,
     output_folder: &str,
     channel: ChannelConfig,
 ) -> Result<ChannelModel, LineupError> {

@@ -8,6 +8,7 @@ use std::time::Duration;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::{Router, routing::get};
+use clap::Parser;
 use ersatztv_core::{READY_FILE_NAME, empty_folder, wait_for_file};
 use tokio::process::Child;
 use tokio::signal;
@@ -15,6 +16,12 @@ use tokio::sync::Mutex;
 
 use crate::config::ChannelConfig;
 use crate::error::LineupError;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    config_path: std::path::PathBuf,
+}
 
 #[tokio::main]
 pub async fn main() {
@@ -51,16 +58,14 @@ async fn shutdown_signal() {
 }
 
 async fn run() -> Result<(), LineupError> {
-    let config_path = std::env::args()
-        .nth(1)
-        .ok_or(LineupError::LineupConfigRequired)?;
+    let args = Args::parse();
 
     // load lineup config
-    let lineup_config = config::from_file(&config_path).await?;
+    let lineup_config = config::from_file(&args.config_path).await?;
 
     let mut channels: Vec<ChannelModel> = Vec::with_capacity(lineup_config.channels.len());
     for channel in lineup_config.channels {
-        match validate_channel(&config_path, &lineup_config.output.folder, channel) {
+        match validate_channel(&args.config_path, &lineup_config.output.folder, channel) {
             Ok(channel_config) => {
                 channels.push(channel_config);
             }
@@ -162,18 +167,17 @@ struct LineupState {
 }
 
 fn validate_channel(
-    config_path: &str,
+    config_path: &std::path::PathBuf,
     output_folder: &str,
     channel: ChannelConfig,
 ) -> Result<ChannelModel, LineupError> {
     let mut channel_config = std::path::PathBuf::from(&channel.config);
     if channel_config.is_relative() {
-        let parent =
-            std::path::Path::new(config_path)
-                .parent()
-                .ok_or(LineupError::LineupConfigFailure(String::from(
-                    "failed to find parent of config",
-                )))?;
+        let parent = config_path
+            .parent()
+            .ok_or(LineupError::LineupConfigFailure(String::from(
+                "failed to find parent of config",
+            )))?;
         channel_config = parent.join(&channel_config).canonicalize()?;
     }
 

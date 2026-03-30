@@ -7,9 +7,6 @@ pub enum LineupError {
     #[error("io error {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("lineup config is required as arg")]
-    LineupConfigRequired,
-
     #[error("unable to load lineup config {0}")]
     LineupConfigFailure(String),
 

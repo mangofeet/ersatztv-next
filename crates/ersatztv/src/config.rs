@@ -43,7 +43,7 @@ fn port_default() -> u16 {
     8409
 }
 
-pub async fn from_file(path: &str) -> Result<LineupConfig, LineupError> {
+pub async fn from_file(path: &std::path::PathBuf) -> Result<LineupConfig, LineupError> {
     let config_string = tokio::fs::read_to_string(path)
         .await
         .map_err(|e| LineupError::LineupConfigFailure(e.to_string()))?;

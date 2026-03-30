@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = { workspace = true }
+clap = { workspace = true }
 env_logger = { workspace = true }
 ersatztv-core = { workspace = true }
 log = { workspace = true }

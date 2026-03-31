@@ -1,10 +1,14 @@
 use std::time::{Duration, Instant};
 
-use tokio::fs::{read_dir, remove_dir, remove_file};
+use tokio::fs::{create_dir_all, read_dir, remove_dir, remove_file};
 
 pub const READY_FILE_NAME: &str = ".ready";
 
 pub async fn empty_folder(output_folder: &std::path::Path) -> Result<(), std::io::Error> {
+    if !output_folder.exists() {
+        create_dir_all(output_folder).await?;
+    }
+
     let mut entries = read_dir(output_folder).await?;
     while let Ok(Some(entry)) = entries.next_entry().await {
         if let Ok(file_type) = entry.file_type().await {

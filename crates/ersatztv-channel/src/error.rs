@@ -25,6 +25,9 @@ pub enum ChannelError {
     #[error("only local sources are supported as playout items")]
     PlayoutJsonLocalSourceRequired,
 
+    #[error("local source is invalid for playout item")]
+    PlayoutJsonInvalidLocalSource,
+
     #[error("{0}")]
     PipelineError(#[from] FFPipelineError),
 

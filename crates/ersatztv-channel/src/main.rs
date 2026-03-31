@@ -7,6 +7,7 @@ use clap::Parser;
 use ersatztv_core::{READY_FILE_NAME, empty_folder, wait_for_file};
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource};
 use ffpipeline::{pipeline, probe};
+use simple_expand_tilde::expand_tilde;
 
 use crate::config::ChannelConfig;
 use crate::error::ChannelError;
@@ -45,8 +46,15 @@ async fn run() -> Result<(), ChannelError> {
 
     match current_source {
         PlayoutItemSource::Local { path } => {
+            let expanded_path_buf =
+                expand_tilde(&path).ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
+            let expanded_path = expanded_path_buf
+                .as_os_str()
+                .to_str()
+                .ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
+
             // probe current item
-            let probe_result = probe::probe(&path)?;
+            let probe_result = probe::probe(expanded_path)?;
             log::debug!("probe result: {probe_result}");
 
             let output_folder = std::path::Path::new(&args.output_folder);

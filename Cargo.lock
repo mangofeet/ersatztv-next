@@ -267,6 +267,7 @@ dependencies = [
  "ffpipeline",
  "log",
  "serde",
+ "simple-expand-tilde",
  "thiserror",
  "tokio",
  "toml",
@@ -724,6 +725,12 @@ dependencies = [
  "errno",
  "libc",
 ]
+
+[[package]]
+name = "simple-expand-tilde"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21dfe67210445d0957de581e7bec0befd16fc9eb7c651efd8eb5cb06c651fb63"
 
 [[package]]
 name = "slab"

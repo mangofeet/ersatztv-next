@@ -1,3 +1,4 @@
+mod channel_model;
 mod channel_session;
 mod config;
 mod error;
@@ -13,8 +14,8 @@ use ersatztv_core::empty_folder;
 use tokio::signal;
 use tokio::sync::Mutex;
 
+use crate::channel_model::ChannelModel;
 use crate::channel_session::ChannelSession;
-use crate::config::ChannelConfig;
 use crate::error::LineupError;
 
 #[derive(Parser, Debug)]
@@ -65,7 +66,7 @@ async fn run() -> Result<(), LineupError> {
 
     let mut channels: Vec<ChannelModel> = Vec::with_capacity(lineup_config.channels.len());
     for channel in lineup_config.channels {
-        match validate_channel(&args.config_path, &lineup_config.output.folder, channel) {
+        match ChannelModel::new(&args.config_path, &lineup_config.output.folder, channel) {
             Ok(channel_config) => {
                 channels.push(channel_config);
             }
@@ -114,7 +115,7 @@ async fn stream(
     let channel = state
         .channels
         .iter()
-        .find(|c| c.number == number)
+        .find(|c| c.number() == number)
         .ok_or(LineupError::ChannelNotFound(number.clone()))?;
 
     let (multi_variant, mut ready_receiver) = {
@@ -142,40 +143,9 @@ async fn stream(
     Ok(axum::response::Redirect::temporary(&multi_variant))
 }
 
-struct ChannelModel {
-    number: String,
-    config: std::path::PathBuf,
-    output_folder: std::path::PathBuf,
-}
-
 struct LineupState {
     channels: Vec<ChannelModel>,
     active: Mutex<HashMap<String, ChannelSession>>,
-}
-
-fn validate_channel(
-    config_path: &std::path::Path,
-    output_folder: &str,
-    channel: ChannelConfig,
-) -> Result<ChannelModel, LineupError> {
-    let mut channel_config = std::path::PathBuf::from(&channel.config);
-    if channel_config.is_relative() {
-        let parent = config_path
-            .parent()
-            .ok_or(LineupError::LineupConfigFailure(String::from(
-                "failed to find parent of config",
-            )))?;
-        channel_config = parent.join(&channel_config).canonicalize()?;
-    }
-
-    let mut output_folder = std::path::PathBuf::from(output_folder);
-    output_folder = output_folder.join(&channel.number);
-
-    Ok(ChannelModel {
-        number: channel.number,
-        config: channel_config,
-        output_folder,
-    })
 }
 
 async fn fix_content_types(

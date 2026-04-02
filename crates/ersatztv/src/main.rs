@@ -1,19 +1,19 @@
+mod channel_session;
 mod config;
 mod error;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::{Router, routing::get};
 use clap::Parser;
-use ersatztv_core::{READY_FILE_NAME, empty_folder, wait_for_file};
-use tokio::process::Child;
+use ersatztv_core::empty_folder;
 use tokio::signal;
 use tokio::sync::Mutex;
 
+use crate::channel_session::ChannelSession;
 use crate::config::ChannelConfig;
 use crate::error::LineupError;
 
@@ -117,37 +117,26 @@ async fn stream(
         .find(|c| c.number == number)
         .ok_or(LineupError::ChannelNotFound(number.clone()))?;
 
-    let mut active = state.active.lock().await;
+    let (redirect, mut ready_receiver) = {
+        let mut active = state.active.lock().await;
 
-    if let Some(proc) = active.get(&number) {
-        return Ok(axum::response::Redirect::temporary(&proc.multi_variant));
-    }
+        if let Some(channel_session) = active.get(&number) {
+            (channel_session.entry().to_owned(), channel_session.ready())
+        } else {
+            let channel_session = ChannelSession::new(channel)?;
+            let redirect_destination = channel_session.entry().to_owned();
+            let ready_receiver = channel_session.ready();
+            active.insert(number, channel_session);
+            (redirect_destination, ready_receiver)
+        }
+    };
 
-    let child = tokio::process::Command::new(channel_binary_path()?)
-        .arg("--output-folder")
-        .arg(&channel.output_folder)
-        .arg(&channel.config)
-        .spawn()
-        .map_err(LineupError::Io)?;
+    ready_receiver
+        .wait_for(|&ready| ready)
+        .await
+        .map_err(|_| LineupError::ChannelNotFound(String::from("channel timeout")))?;
 
-    // not actually multi-variant, this is the variant playlist
-    let multi_variant = format!("/session/{number}/live.m3u8");
-    active.insert(
-        number,
-        ChannelProcess {
-            _child: child,
-            multi_variant: multi_variant.clone(),
-        },
-    );
-
-    let ready_file = channel.output_folder.join(READY_FILE_NAME);
-    if !wait_for_file(&ready_file, Duration::from_secs(10)).await {
-        Err(LineupError::ChannelNotFound(String::from(
-            "channel timeout",
-        )))
-    } else {
-        Ok(axum::response::Redirect::temporary(&multi_variant))
-    }
+    Ok(axum::response::Redirect::temporary(&redirect))
 }
 
 struct ChannelModel {
@@ -156,14 +145,9 @@ struct ChannelModel {
     output_folder: std::path::PathBuf,
 }
 
-struct ChannelProcess {
-    _child: Child,
-    multi_variant: String,
-}
-
 struct LineupState {
     channels: Vec<ChannelModel>,
-    active: Mutex<HashMap<String, ChannelProcess>>,
+    active: Mutex<HashMap<String, ChannelSession>>,
 }
 
 fn validate_channel(

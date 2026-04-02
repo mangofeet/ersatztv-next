@@ -5,8 +5,8 @@ use ersatztv_core::{READY_FILE_NAME, wait_for_file};
 use tokio::process::Child;
 use tokio::sync::watch;
 
+use crate::ChannelModel;
 use crate::error::LineupError;
-use crate::{ChannelModel, channel_binary_path};
 
 pub struct ChannelSession {
     _output_folder: PathBuf,
@@ -16,7 +16,7 @@ pub struct ChannelSession {
 }
 
 impl ChannelSession {
-    pub fn new(channel: &ChannelModel) -> Result<Self, LineupError> {
+    pub fn spawn(channel: &ChannelModel) -> Result<Self, LineupError> {
         let child = tokio::process::Command::new(channel_binary_path()?)
             .arg("--output-folder")
             .arg(&channel.output_folder)
@@ -44,11 +44,22 @@ impl ChannelSession {
         })
     }
 
-    pub fn ready(&self) -> watch::Receiver<bool> {
+    pub fn subscribe_ready(&self) -> watch::Receiver<bool> {
         self.ready_receiver.clone()
     }
 
-    pub fn entry(&self) -> &str {
+    pub fn multi_variant(&self) -> &str {
         &self.multi_variant
     }
+}
+
+fn channel_binary_path() -> Result<PathBuf, LineupError> {
+    let mut path = std::env::current_exe()?
+        .parent()
+        .ok_or(LineupError::ChannelNotFound(String::from(
+            "unable to locate channel binary",
+        )))?
+        .to_path_buf();
+    path.push("ersatztv-channel");
+    Ok(path)
 }

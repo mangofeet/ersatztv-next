@@ -117,17 +117,20 @@ async fn stream(
         .find(|c| c.number == number)
         .ok_or(LineupError::ChannelNotFound(number.clone()))?;
 
-    let (redirect, mut ready_receiver) = {
+    let (multi_variant, mut ready_receiver) = {
         let mut active = state.active.lock().await;
 
         if let Some(channel_session) = active.get(&number) {
-            (channel_session.entry().to_owned(), channel_session.ready())
+            (
+                channel_session.multi_variant().to_owned(),
+                channel_session.subscribe_ready(),
+            )
         } else {
-            let channel_session = ChannelSession::new(channel)?;
-            let redirect_destination = channel_session.entry().to_owned();
-            let ready_receiver = channel_session.ready();
+            let channel_session = ChannelSession::spawn(channel)?;
+            let multi_variant = channel_session.multi_variant().to_owned();
+            let ready_receiver = channel_session.subscribe_ready();
             active.insert(number, channel_session);
-            (redirect_destination, ready_receiver)
+            (multi_variant, ready_receiver)
         }
     };
 
@@ -136,7 +139,7 @@ async fn stream(
         .await
         .map_err(|_| LineupError::ChannelNotFound(String::from("channel timeout")))?;
 
-    Ok(axum::response::Redirect::temporary(&redirect))
+    Ok(axum::response::Redirect::temporary(&multi_variant))
 }
 
 struct ChannelModel {
@@ -173,17 +176,6 @@ fn validate_channel(
         config: channel_config,
         output_folder,
     })
-}
-
-fn channel_binary_path() -> Result<std::path::PathBuf, LineupError> {
-    let mut path = std::env::current_exe()?
-        .parent()
-        .ok_or(LineupError::ChannelNotFound(String::from(
-            "unable to locate channel binary",
-        )))?
-        .to_path_buf();
-    path.push("ersatztv-channel");
-    Ok(path)
 }
 
 async fn fix_content_types(

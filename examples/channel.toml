@@ -2,6 +2,10 @@
 # relative to channel.toml
 folder = "./playout"
 
+[normalization.audio]
+format = "aac"
+bitrate_kbps = 192
+
 [normalization.video]
 format = "h264"
 bitrate_kbps = 2_000

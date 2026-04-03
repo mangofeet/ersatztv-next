@@ -4,8 +4,14 @@ use crate::error::FFPipelineError;
 use crate::output::OutputSettings;
 use crate::probe::ProbeResult;
 
+#[derive(Debug, Clone)]
+pub struct AudioFormat(pub String);
+
 #[derive(Debug, Clone, Copy)]
 pub struct Kbps(pub u32);
+
+#[derive(Debug, Clone)]
+pub struct VideoFormat(pub String);
 
 pub enum LogLevel {
     Error,
@@ -64,12 +70,16 @@ impl OutputFormat {
 
 pub enum AudioCodec {
     Copy,
+    Aac,
+    Ac3,
 }
 
 impl AudioCodec {
     fn as_arg(&self) -> Vec<String> {
         match self {
             AudioCodec::Copy => vec![String::from("-acodec"), String::from("copy")],
+            AudioCodec::Aac => vec![String::from("-acodec"), String::from("aac")],
+            AudioCodec::Ac3 => vec![String::from("-acodec"), String::from("ac3")],
         }
     }
 }
@@ -95,6 +105,7 @@ pub enum OutputOption {
     VideoCodec(VideoCodec),
     VideoBitrate(Option<Kbps>),
     AudioCodec(AudioCodec),
+    AudioBitrate(Option<Kbps>),
     Duration(std::time::Duration),
 }
 
@@ -113,6 +124,15 @@ impl OutputOption {
             }
             OutputOption::VideoBitrate(None) => Vec::new(),
             OutputOption::AudioCodec(codec) => codec.as_arg(),
+            OutputOption::AudioBitrate(Some(bitrate_kbps)) => {
+                vec![
+                    String::from("-b:a"),
+                    format!("{}k", bitrate_kbps.0),
+                    String::from("-maxrate:a"),
+                    format!("{}k", bitrate_kbps.0),
+                ]
+            }
+            OutputOption::AudioBitrate(None) => Vec::new(),
             OutputOption::Duration(duration) => {
                 vec![String::from("-t"), format!("{}s", duration.as_secs_f64())]
             }
@@ -147,7 +167,13 @@ impl Pipeline {
             None => std::time::Duration::from_secs(30),
         };
 
-        let video_codec = match output_settings.video_format.as_str() {
+        let audio_codec = match output_settings.audio_format.0.as_str() {
+            "aac" => AudioCodec::Aac,
+            "ac3" => AudioCodec::Ac3,
+            _ => AudioCodec::Copy,
+        };
+
+        let video_codec = match output_settings.video_format.0.as_str() {
             "h264" => VideoCodec::Libx264,
             "hevc" => VideoCodec::Libx265,
             _ => VideoCodec::Copy,
@@ -162,7 +188,8 @@ impl Pipeline {
             ],
             inputs: vec![PipelineInput::Video(probe_result.path)],
             output_options: vec![
-                OutputOption::AudioCodec(AudioCodec::Copy),
+                OutputOption::AudioCodec(audio_codec),
+                OutputOption::AudioBitrate(output_settings.audio_bitrate),
                 OutputOption::VideoCodec(video_codec),
                 OutputOption::VideoBitrate(output_settings.video_bitrate),
                 OutputOption::Format(OutputFormat::Hls),

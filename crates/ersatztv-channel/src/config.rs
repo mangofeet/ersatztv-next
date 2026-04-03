@@ -16,10 +16,17 @@ pub struct PlayoutConfig {
 #[derive(Deserialize)]
 pub struct NormalizationConfig {
     pub video: VideoNormalizationConfig,
+    pub audio: AudioNormalizationConfig,
 }
 
 #[derive(Deserialize)]
 pub struct VideoNormalizationConfig {
+    pub format: String,
+    pub bitrate_kbps: Option<u32>,
+}
+
+#[derive(Deserialize)]
+pub struct AudioNormalizationConfig {
     pub format: String,
     pub bitrate_kbps: Option<u32>,
 }

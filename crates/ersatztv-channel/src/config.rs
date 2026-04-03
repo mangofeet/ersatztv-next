@@ -21,6 +21,7 @@ pub struct NormalizationConfig {
 #[derive(Deserialize)]
 pub struct VideoNormalizationConfig {
     pub format: String,
+    pub bitrate_kbps: Option<u32>,
 }
 
 pub async fn from_file(path: &std::path::PathBuf) -> Result<ChannelConfig, ChannelError> {

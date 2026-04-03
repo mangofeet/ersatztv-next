@@ -4,3 +4,4 @@ folder = "./playout"
 
 [normalization.video]
 format = "h264"
+bitrate_kbps = 2_000

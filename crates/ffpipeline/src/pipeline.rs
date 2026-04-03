@@ -4,6 +4,9 @@ use crate::error::FFPipelineError;
 use crate::output::OutputSettings;
 use crate::probe::ProbeResult;
 
+#[derive(Debug, Clone, Copy)]
+pub struct Kbps(pub u32);
+
 pub enum LogLevel {
     Error,
 }
@@ -90,6 +93,7 @@ impl VideoCodec {
 pub enum OutputOption {
     Format(OutputFormat),
     VideoCodec(VideoCodec),
+    VideoBitrate(Option<Kbps>),
     AudioCodec(AudioCodec),
     Duration(std::time::Duration),
 }
@@ -99,6 +103,15 @@ impl OutputOption {
         match self {
             OutputOption::Format(format) => format.as_arg(),
             OutputOption::VideoCodec(codec) => codec.as_arg(),
+            OutputOption::VideoBitrate(Some(bitrate_kbps)) => {
+                vec![
+                    String::from("-b:v"),
+                    format!("{}k", bitrate_kbps.0),
+                    String::from("-maxrate:v"),
+                    format!("{}k", bitrate_kbps.0),
+                ]
+            }
+            OutputOption::VideoBitrate(None) => Vec::new(),
             OutputOption::AudioCodec(codec) => codec.as_arg(),
             OutputOption::Duration(duration) => {
                 vec![String::from("-t"), format!("{}s", duration.as_secs_f64())]
@@ -151,6 +164,7 @@ impl Pipeline {
             output_options: vec![
                 OutputOption::AudioCodec(AudioCodec::Copy),
                 OutputOption::VideoCodec(video_codec),
+                OutputOption::VideoBitrate(output_settings.video_bitrate),
                 OutputOption::Format(OutputFormat::Hls),
                 OutputOption::Duration(duration),
             ],

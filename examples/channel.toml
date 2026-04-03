@@ -1,3 +1,6 @@
 [playout]
 # relative to channel.toml
 folder = "./playout"
+
+[normalization.video]
+format = "h264"

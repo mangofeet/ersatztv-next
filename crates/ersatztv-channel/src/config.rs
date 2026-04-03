@@ -5,11 +5,22 @@ use crate::error::ChannelError;
 #[derive(Deserialize)]
 pub struct ChannelConfig {
     pub playout: PlayoutConfig,
+    pub normalization: NormalizationConfig,
 }
 
 #[derive(Deserialize)]
 pub struct PlayoutConfig {
     pub folder: String,
+}
+
+#[derive(Deserialize)]
+pub struct NormalizationConfig {
+    pub video: VideoNormalizationConfig,
+}
+
+#[derive(Deserialize)]
+pub struct VideoNormalizationConfig {
+    pub format: String,
 }
 
 pub async fn from_file(path: &std::path::PathBuf) -> Result<ChannelConfig, ChannelError> {

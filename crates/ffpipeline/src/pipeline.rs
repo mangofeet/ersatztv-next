@@ -1,6 +1,7 @@
 use std::fmt::Formatter;
 
 use crate::error::FFPipelineError;
+use crate::output::OutputSettings;
 use crate::probe::ProbeResult;
 
 pub enum LogLevel {
@@ -72,12 +73,14 @@ impl AudioCodec {
 
 pub enum VideoCodec {
     Copy,
+    Libx264,
 }
 
 impl VideoCodec {
     fn as_arg(&self) -> Vec<String> {
         match self {
             VideoCodec::Copy => vec![String::from("-vcodec"), String::from("copy")],
+            VideoCodec::Libx264 => vec![String::from("-vcodec"), String::from("libx264")],
         }
     }
 }
@@ -118,11 +121,20 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    fn full(probe_result: ProbeResult, output: String) -> Pipeline {
+    fn full(
+        probe_result: ProbeResult,
+        output_settings: OutputSettings,
+        output: String,
+    ) -> Pipeline {
         // for now, limit to 30s
         let duration = match probe_result.duration {
             Some(probed_duration) => probed_duration.min(std::time::Duration::from_secs(30)),
             None => std::time::Duration::from_secs(30),
+        };
+
+        let video_codec = match output_settings.video_format.as_str() {
+            "h264" => VideoCodec::Copy,
+            _ => VideoCodec::Copy,
         };
 
         Pipeline {
@@ -135,7 +147,7 @@ impl Pipeline {
             inputs: vec![PipelineInput::Video(probe_result.path)],
             output_options: vec![
                 OutputOption::AudioCodec(AudioCodec::Copy),
-                OutputOption::VideoCodec(VideoCodec::Copy),
+                OutputOption::VideoCodec(video_codec),
                 OutputOption::Format(OutputFormat::Hls),
                 OutputOption::Duration(duration),
             ],
@@ -172,7 +184,8 @@ impl std::fmt::Display for Pipeline {
 
 pub fn generate_pipeline(
     probe_result: ProbeResult,
+    output_settings: OutputSettings,
     output: String,
 ) -> Result<Pipeline, FFPipelineError> {
-    Ok(Pipeline::full(probe_result, output))
+    Ok(Pipeline::full(probe_result, output_settings, output))
 }

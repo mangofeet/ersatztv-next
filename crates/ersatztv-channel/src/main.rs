@@ -1,10 +1,8 @@
 mod config;
 mod error;
 
-use std::time::Duration;
-
 use clap::Parser;
-use ersatztv_core::{READY_FILE_NAME, empty_folder, wait_for_file};
+use ersatztv_core::{READY_FILE_NAME, READY_FILE_TIMEOUT, empty_folder, wait_for_file};
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource};
 use ffpipeline::output::OutputSettings;
 use ffpipeline::{pipeline, probe};
@@ -92,29 +90,45 @@ async fn run() -> Result<(), ChannelError> {
                 .spawn()
                 .map_err(|_| ChannelError::StreamFailure(String::from("failed to spawn ffmpeg")))?;
 
-            let ready = tokio::select! {
+            let (ready, ffmpeg_already_exited) = tokio::select! {
                 status = ffmpeg_child.wait() => {
                     let status = status.map_err(|_| ChannelError::StreamFailure(String::from("ffmpeg exit code")))?;
                     if !status.success() {
                         return Err(ChannelError::StreamFailure(String::from("ffmpeg exit code")));
                     }
 
-                    true
+                    (true, true)
                 }
 
                 // wait for segment #4 to exist
                 result = async {
                     let target_file = output_folder.join("live3.ts");
-                    return wait_for_file(&target_file, Duration::from_secs(30)).await;
+                    return wait_for_file(&target_file, READY_FILE_TIMEOUT).await;
                 } => {
-                    result
+                    (result, false)
                 }
             };
 
             if ready {
                 tokio::fs::write(&ready_file, b"").await?;
+
+                if !ffmpeg_already_exited {
+                    log::debug!("waiting for ffmpeg to terminate...");
+                    let status = ffmpeg_child
+                        .wait()
+                        .await
+                        .map_err(|e| ChannelError::StreamFailure(e.to_string()))?;
+                    log::debug!("ffmpeg exited with status: {status}");
+                    if !status.success() {
+                        return Err(ChannelError::StreamFailure(format!(
+                            "ffmoeg exited: {status}"
+                        )));
+                    }
+                }
+
                 Ok(())
             } else {
+                ffmpeg_child.kill().await.ok();
                 Err(ChannelError::StreamFailure(String::from(
                     "not ready in time",
                 )))

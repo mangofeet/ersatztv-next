@@ -74,6 +74,7 @@ impl AudioCodec {
 pub enum VideoCodec {
     Copy,
     Libx264,
+    Libx265,
 }
 
 impl VideoCodec {
@@ -81,6 +82,7 @@ impl VideoCodec {
         match self {
             VideoCodec::Copy => vec![String::from("-vcodec"), String::from("copy")],
             VideoCodec::Libx264 => vec![String::from("-vcodec"), String::from("libx264")],
+            VideoCodec::Libx265 => vec![String::from("-vcodec"), String::from("libx265")],
         }
     }
 }
@@ -133,7 +135,8 @@ impl Pipeline {
         };
 
         let video_codec = match output_settings.video_format.as_str() {
-            "h264" => VideoCodec::Copy,
+            "h264" => VideoCodec::Libx264,
+            "hevc" => VideoCodec::Libx265,
             _ => VideoCodec::Copy,
         };
 

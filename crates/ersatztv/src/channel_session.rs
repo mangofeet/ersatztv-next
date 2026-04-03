@@ -1,7 +1,6 @@
 use std::path::PathBuf;
-use std::time::Duration;
 
-use ersatztv_core::{READY_FILE_NAME, wait_for_file};
+use ersatztv_core::{READY_FILE_NAME, READY_FILE_TIMEOUT, wait_for_file};
 use tokio::process::Child;
 use tokio::sync::watch;
 
@@ -31,7 +30,7 @@ impl ChannelSession {
         let ready_file = channel.output_folder().join(READY_FILE_NAME);
 
         tokio::spawn(async move {
-            if wait_for_file(&ready_file, Duration::from_secs(10)).await {
+            if wait_for_file(&ready_file, READY_FILE_TIMEOUT).await {
                 let _ = ready_sender.send(true);
             }
         });

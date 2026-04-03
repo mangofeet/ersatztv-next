@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use tokio::fs::{create_dir_all, read_dir, remove_dir, remove_file};
 
 pub const READY_FILE_NAME: &str = ".ready";
+pub const READY_FILE_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub async fn empty_folder(output_folder: &std::path::Path) -> Result<(), std::io::Error> {
     if !output_folder.exists() {

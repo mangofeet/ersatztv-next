@@ -4,7 +4,7 @@ use crate::error::FFPipelineError;
 use crate::output::OutputSettings;
 use crate::probe::ProbeResult;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum AudioFormat {
     Aac,
     Ac3,
@@ -13,10 +13,23 @@ pub enum AudioFormat {
 #[derive(Debug, Clone, Copy)]
 pub struct Kbps(pub u32);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum VideoFormat {
     H264,
     Hevc,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum HardwareAccel {
+    VideoToolbox,
+}
+
+impl HardwareAccel {
+    fn as_arg(&self) -> String {
+        match self {
+            HardwareAccel::VideoToolbox => String::from("videotoolbox"),
+        }
+    }
 }
 
 pub enum LogLevel {
@@ -36,6 +49,7 @@ pub enum GlobalOption {
     NoStdIn,
     HideBanner,
     LogLevel(LogLevel),
+    HardwareAccel(Option<HardwareAccel>),
 }
 
 impl GlobalOption {
@@ -45,6 +59,10 @@ impl GlobalOption {
             GlobalOption::NoStdIn => vec![String::from("-nostdin")],
             GlobalOption::HideBanner => vec![String::from("-hide_banner")],
             GlobalOption::LogLevel(level) => vec![String::from("-loglevel"), level.as_arg()],
+            GlobalOption::HardwareAccel(Some(hardware_accel)) => {
+                vec![String::from("-hwaccel"), hardware_accel.as_arg()]
+            }
+            GlobalOption::HardwareAccel(None) => Vec::new(),
         }
     }
 }
@@ -82,27 +100,35 @@ pub enum AudioCodec {
 
 impl AudioCodec {
     fn as_arg(&self) -> Vec<String> {
-        match self {
-            AudioCodec::Copy => vec![String::from("-acodec"), String::from("copy")],
-            AudioCodec::Aac => vec![String::from("-acodec"), String::from("aac")],
-            AudioCodec::Ac3 => vec![String::from("-acodec"), String::from("ac3")],
-        }
+        let codec = match self {
+            AudioCodec::Copy => String::from("copy"),
+            AudioCodec::Aac => String::from("aac"),
+            AudioCodec::Ac3 => String::from("ac3"),
+        };
+
+        vec![String::from("-acodec"), codec]
     }
 }
 
 pub enum VideoCodec {
     Copy,
+    H264VideoToolbox,
+    HevcVideoToolbox,
     Libx264,
     Libx265,
 }
 
 impl VideoCodec {
     fn as_arg(&self) -> Vec<String> {
-        match self {
-            VideoCodec::Copy => vec![String::from("-vcodec"), String::from("copy")],
-            VideoCodec::Libx264 => vec![String::from("-vcodec"), String::from("libx264")],
-            VideoCodec::Libx265 => vec![String::from("-vcodec"), String::from("libx265")],
-        }
+        let codec = match self {
+            VideoCodec::Copy => String::from("copy"),
+            VideoCodec::H264VideoToolbox => String::from("h264_videotoolbox"),
+            VideoCodec::HevcVideoToolbox => String::from("hevc_videotoolbox"),
+            VideoCodec::Libx264 => String::from("libx264"),
+            VideoCodec::Libx265 => String::from("libx265"),
+        };
+
+        vec![String::from("-vcodec"), codec]
     }
 }
 
@@ -179,9 +205,15 @@ impl Pipeline {
             _ => AudioCodec::Copy,
         };
 
-        let video_codec = match output_settings.video_format {
-            Some(VideoFormat::H264) => VideoCodec::Libx264,
-            Some(VideoFormat::Hevc) => VideoCodec::Libx265,
+        let video_codec = match (output_settings.accel, output_settings.video_format) {
+            (Some(HardwareAccel::VideoToolbox), Some(VideoFormat::H264)) => {
+                VideoCodec::H264VideoToolbox
+            }
+            (Some(HardwareAccel::VideoToolbox), Some(VideoFormat::Hevc)) => {
+                VideoCodec::HevcVideoToolbox
+            }
+            (None, Some(VideoFormat::H264)) => VideoCodec::Libx264,
+            (None, Some(VideoFormat::Hevc)) => VideoCodec::Libx265,
             _ => VideoCodec::Copy,
         };
 
@@ -191,6 +223,7 @@ impl Pipeline {
                 GlobalOption::NoStdIn,
                 GlobalOption::HideBanner,
                 GlobalOption::LogLevel(LogLevel::Error),
+                GlobalOption::HardwareAccel(output_settings.accel),
             ],
             inputs: vec![PipelineInput::Video(probe_result.path)],
             output_options: vec![

@@ -45,6 +45,7 @@ impl From<AudioFormat> for ffpipeline::pipeline::AudioFormat {
 pub struct VideoNormalizationConfig {
     pub format: Option<VideoFormat>,
     pub bitrate_kbps: Option<u32>,
+    pub accel: Option<HardwareAccel>,
 }
 
 #[derive(Deserialize)]
@@ -52,6 +53,20 @@ pub struct VideoNormalizationConfig {
 pub enum VideoFormat {
     H264,
     Hevc,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HardwareAccel {
+    VideoToolbox,
+}
+
+impl From<HardwareAccel> for ffpipeline::pipeline::HardwareAccel {
+    fn from(value: HardwareAccel) -> Self {
+        match value {
+            HardwareAccel::VideoToolbox => ffpipeline::pipeline::HardwareAccel::VideoToolbox,
+        }
+    }
 }
 
 impl From<VideoFormat> for ffpipeline::pipeline::VideoFormat {

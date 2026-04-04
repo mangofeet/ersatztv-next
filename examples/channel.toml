@@ -9,3 +9,4 @@ bitrate_kbps = 192
 [normalization.video]
 format = "h264"
 bitrate_kbps = 2_000
+accel = "videotoolbox"

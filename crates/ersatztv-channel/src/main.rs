@@ -5,7 +5,7 @@ use clap::Parser;
 use ersatztv_core::{READY_FILE_NAME, READY_FILE_TIMEOUT, empty_folder, wait_for_file};
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource};
 use ffpipeline::output::OutputSettings;
-use ffpipeline::pipeline::{AudioFormat, Kbps, VideoFormat};
+use ffpipeline::pipeline::{AudioFormat, HardwareAccel, Kbps, VideoFormat};
 use ffpipeline::{pipeline, probe};
 use simple_expand_tilde::expand_tilde;
 
@@ -93,6 +93,11 @@ async fn run() -> Result<(), ChannelError> {
                     .format
                     .map(VideoFormat::from),
                 channel_config.normalization.video.bitrate_kbps.map(Kbps),
+                channel_config
+                    .normalization
+                    .video
+                    .accel
+                    .map(HardwareAccel::from),
             );
             let pipeline_result =
                 pipeline::generate_pipeline(probe_result, output_settings, output_file)?;

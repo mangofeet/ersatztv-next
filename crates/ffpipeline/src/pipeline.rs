@@ -5,7 +5,10 @@ use crate::output::OutputSettings;
 use crate::probe::ProbeResult;
 
 #[derive(Debug, Clone)]
-pub struct AudioFormat(pub String);
+pub enum AudioFormat {
+    Aac,
+    Ac3,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Kbps(pub u32);
@@ -170,9 +173,9 @@ impl Pipeline {
             None => std::time::Duration::from_secs(30),
         };
 
-        let audio_codec = match output_settings.audio_format.0.as_str() {
-            "aac" => AudioCodec::Aac,
-            "ac3" => AudioCodec::Ac3,
+        let audio_codec = match output_settings.audio_format {
+            Some(AudioFormat::Aac) => AudioCodec::Aac,
+            Some(AudioFormat::Ac3) => AudioCodec::Ac3,
             _ => AudioCodec::Copy,
         };
 

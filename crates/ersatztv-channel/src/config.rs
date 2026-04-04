@@ -21,8 +21,24 @@ pub struct NormalizationConfig {
 
 #[derive(Deserialize)]
 pub struct AudioNormalizationConfig {
-    pub format: String,
+    pub format: Option<AudioFormat>,
     pub bitrate_kbps: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioFormat {
+    Aac,
+    Ac3,
+}
+
+impl From<AudioFormat> for ffpipeline::pipeline::AudioFormat {
+    fn from(value: AudioFormat) -> Self {
+        match value {
+            AudioFormat::Aac => ffpipeline::pipeline::AudioFormat::Aac,
+            AudioFormat::Ac3 => ffpipeline::pipeline::AudioFormat::Ac3,
+        }
+    }
 }
 
 #[derive(Deserialize)]

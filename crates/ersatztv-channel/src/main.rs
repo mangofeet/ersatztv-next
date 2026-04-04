@@ -81,7 +81,11 @@ async fn run() -> Result<(), ChannelError> {
 
             // generate pipeline
             let output_settings = OutputSettings::new(
-                AudioFormat(channel_config.normalization.audio.format),
+                channel_config
+                    .normalization
+                    .audio
+                    .format
+                    .map(AudioFormat::from),
                 channel_config.normalization.audio.bitrate_kbps.map(Kbps),
                 channel_config
                     .normalization

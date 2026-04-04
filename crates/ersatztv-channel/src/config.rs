@@ -15,20 +15,36 @@ pub struct PlayoutConfig {
 
 #[derive(Deserialize)]
 pub struct NormalizationConfig {
-    pub video: VideoNormalizationConfig,
     pub audio: AudioNormalizationConfig,
-}
-
-#[derive(Deserialize)]
-pub struct VideoNormalizationConfig {
-    pub format: String,
-    pub bitrate_kbps: Option<u32>,
+    pub video: VideoNormalizationConfig,
 }
 
 #[derive(Deserialize)]
 pub struct AudioNormalizationConfig {
     pub format: String,
     pub bitrate_kbps: Option<u32>,
+}
+
+#[derive(Deserialize)]
+pub struct VideoNormalizationConfig {
+    pub format: Option<VideoFormat>,
+    pub bitrate_kbps: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VideoFormat {
+    H264,
+    Hevc,
+}
+
+impl From<VideoFormat> for ffpipeline::pipeline::VideoFormat {
+    fn from(value: VideoFormat) -> Self {
+        match value {
+            VideoFormat::H264 => ffpipeline::pipeline::VideoFormat::H264,
+            VideoFormat::Hevc => ffpipeline::pipeline::VideoFormat::Hevc,
+        }
+    }
 }
 
 pub async fn from_file(path: &std::path::PathBuf) -> Result<ChannelConfig, ChannelError> {

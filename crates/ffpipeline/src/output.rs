@@ -4,7 +4,7 @@ use crate::pipeline::{AudioFormat, Kbps, VideoFormat};
 pub struct OutputSettings {
     pub audio_format: AudioFormat,
     pub audio_bitrate: Option<Kbps>,
-    pub video_format: VideoFormat,
+    pub video_format: Option<VideoFormat>,
     pub video_bitrate: Option<Kbps>,
 }
 
@@ -12,7 +12,7 @@ impl OutputSettings {
     pub fn new(
         audio_format: AudioFormat,
         audio_bitrate: Option<Kbps>,
-        video_format: VideoFormat,
+        video_format: Option<VideoFormat>,
         video_bitrate: Option<Kbps>,
     ) -> Self {
         OutputSettings {

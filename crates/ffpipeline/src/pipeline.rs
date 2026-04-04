@@ -11,7 +11,10 @@ pub struct AudioFormat(pub String);
 pub struct Kbps(pub u32);
 
 #[derive(Debug, Clone)]
-pub struct VideoFormat(pub String);
+pub enum VideoFormat {
+    H264,
+    Hevc,
+}
 
 pub enum LogLevel {
     Error,
@@ -173,9 +176,9 @@ impl Pipeline {
             _ => AudioCodec::Copy,
         };
 
-        let video_codec = match output_settings.video_format.0.as_str() {
-            "h264" => VideoCodec::Libx264,
-            "hevc" => VideoCodec::Libx265,
+        let video_codec = match output_settings.video_format {
+            Some(VideoFormat::H264) => VideoCodec::Libx264,
+            Some(VideoFormat::Hevc) => VideoCodec::Libx265,
             _ => VideoCodec::Copy,
         };
 

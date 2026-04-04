@@ -23,6 +23,7 @@ pub struct NormalizationConfig {
 pub struct AudioNormalizationConfig {
     pub format: Option<AudioFormat>,
     pub bitrate_kbps: Option<u32>,
+    pub buffer_kbps: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -45,6 +46,7 @@ impl From<AudioFormat> for ffpipeline::pipeline::AudioFormat {
 pub struct VideoNormalizationConfig {
     pub format: Option<VideoFormat>,
     pub bitrate_kbps: Option<u32>,
+    pub buffer_kbps: Option<u32>,
     pub accel: Option<HardwareAccel>,
 }
 

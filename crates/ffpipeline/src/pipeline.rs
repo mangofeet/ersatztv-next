@@ -136,8 +136,10 @@ pub enum OutputOption {
     Format(OutputFormat),
     VideoCodec(VideoCodec),
     VideoBitrate(Option<Kbps>),
+    VideoBuffer(Option<Kbps>),
     AudioCodec(AudioCodec),
     AudioBitrate(Option<Kbps>),
+    AudioBuffer(Option<Kbps>),
     Duration(std::time::Duration),
 }
 
@@ -155,6 +157,10 @@ impl OutputOption {
                 ]
             }
             OutputOption::VideoBitrate(None) => Vec::new(),
+            OutputOption::VideoBuffer(Some(buffer_kbps)) => {
+                vec![String::from("-bufsize:v"), format!("{}k", buffer_kbps.0)]
+            }
+            OutputOption::VideoBuffer(None) => Vec::new(),
             OutputOption::AudioCodec(codec) => codec.as_arg(),
             OutputOption::AudioBitrate(Some(bitrate_kbps)) => {
                 vec![
@@ -165,6 +171,10 @@ impl OutputOption {
                 ]
             }
             OutputOption::AudioBitrate(None) => Vec::new(),
+            OutputOption::AudioBuffer(Some(buffer_kbps)) => {
+                vec![String::from("-bufsize:a"), format!("{}k", buffer_kbps.0)]
+            }
+            OutputOption::AudioBuffer(None) => Vec::new(),
             OutputOption::Duration(duration) => {
                 vec![String::from("-t"), format!("{}s", duration.as_secs_f64())]
             }
@@ -229,8 +239,10 @@ impl Pipeline {
             output_options: vec![
                 OutputOption::AudioCodec(audio_codec),
                 OutputOption::AudioBitrate(output_settings.audio_bitrate),
+                OutputOption::AudioBuffer(output_settings.audio_buffer),
                 OutputOption::VideoCodec(video_codec),
                 OutputOption::VideoBitrate(output_settings.video_bitrate),
+                OutputOption::VideoBuffer(output_settings.video_buffer),
                 OutputOption::Format(OutputFormat::Hls),
                 OutputOption::Duration(duration),
             ],

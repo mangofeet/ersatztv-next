@@ -87,12 +87,14 @@ async fn run() -> Result<(), ChannelError> {
                     .format
                     .map(AudioFormat::from),
                 channel_config.normalization.audio.bitrate_kbps.map(Kbps),
+                channel_config.normalization.audio.buffer_kbps.map(Kbps),
                 channel_config
                     .normalization
                     .video
                     .format
                     .map(VideoFormat::from),
                 channel_config.normalization.video.bitrate_kbps.map(Kbps),
+                channel_config.normalization.video.buffer_kbps.map(Kbps),
                 channel_config
                     .normalization
                     .video

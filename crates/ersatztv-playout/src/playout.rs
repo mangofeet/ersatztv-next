@@ -1,4 +1,9 @@
-use serde::Deserialize;
+use std::path::Path;
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 use crate::error::PlayoutError;
 
@@ -8,33 +13,52 @@ pub struct Playout {
     pub items: Vec<PlayoutItem>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PlayoutItem {
     pub id: String,
     pub start: String,
     pub source: Option<PlayoutItemSource>,
     pub tracks: Option<PlayoutItemTracks>,
-    pub duration_ms: u64,
+    pub duration_ms: u128,
 }
 
-#[derive(Debug, Deserialize)]
+impl PlayoutItem {
+    pub fn new(
+        id: String,
+        start: OffsetDateTime,
+        path: &Path,
+        duration: Duration,
+    ) -> Result<PlayoutItem, PlayoutError> {
+        Ok(PlayoutItem {
+            id,
+            start: start.format(&Rfc3339)?,
+            source: Some(PlayoutItemSource::Local {
+                path: path.to_string_lossy().to_string(),
+            }),
+            tracks: None,
+            duration_ms: duration.as_millis(),
+        })
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PlayoutItemTracks {
     pub audio: Option<PlayoutItemAudioTrack>,
     pub video: Option<PlayoutItemVideoTrack>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PlayoutItemAudioTrack {
     pub source: Option<PlayoutItemSource>,
     pub stream_index: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PlayoutItemVideoTrack {
     pub source: PlayoutItemSource,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(tag = "source_type", rename_all = "snake_case")]
 pub enum PlayoutItemSource {
     Local { path: String },

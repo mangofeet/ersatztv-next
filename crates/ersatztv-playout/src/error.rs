@@ -7,4 +7,7 @@ pub enum PlayoutError {
 
     #[error("failed to load playout JSON file: {0}")]
     PlayoutJsonLoadError(String),
+
+    #[error("date formatting error: {0}")]
+    PlayoutDateFormatError(#[from] time::error::Format),
 }

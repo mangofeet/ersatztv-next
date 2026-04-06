@@ -1,6 +1,5 @@
 [playout]
-# relative to channel.toml
-folder = "./playout"
+folder = "~/Playouts"
 
 [normalization.audio]
 format = "aac"

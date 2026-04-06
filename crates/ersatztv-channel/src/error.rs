@@ -13,6 +13,9 @@ pub enum ChannelError {
     #[error("channel config output folder is required")]
     ChannelConfigOutputFolderRequired,
 
+    #[error("Indeterminate local time offset: {0}")]
+    DateOffsetError(#[from] time::error::IndeterminateOffset),
+
     #[error("{0}")]
     PlayoutJsonLoadFailure(#[from] PlayoutError),
 

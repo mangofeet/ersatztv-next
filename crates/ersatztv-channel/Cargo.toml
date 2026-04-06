@@ -13,5 +13,6 @@ log = { workspace = true }
 serde = { workspace = true }
 simple-expand-tilde = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }

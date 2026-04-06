@@ -8,6 +8,8 @@ use ffpipeline::output::OutputSettings;
 use ffpipeline::pipeline::{AudioFormat, HardwareAccel, Kbps, VideoFormat};
 use ffpipeline::{pipeline, probe};
 use simple_expand_tilde::expand_tilde;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 use crate::config::ChannelConfig;
 use crate::error::ChannelError;
@@ -163,20 +165,26 @@ async fn get_current_item(
     config_path: &std::path::PathBuf,
     channel_config: &ChannelConfig,
 ) -> Result<PlayoutItem, ChannelError> {
-    // TODO: better algorithm for finding appropriate playout JSON file
+    // TODO: refactor selecting playout file
 
-    let mut playout_folder = std::path::PathBuf::from(&channel_config.playout.folder);
-    if playout_folder.is_relative() {
+    let now = OffsetDateTime::now_local()?;
+    let playout_folder = std::path::PathBuf::from(&channel_config.playout.folder);
+    let mut expanded_playout_folder =
+        expand_tilde(&playout_folder).ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
+    if expanded_playout_folder.is_relative() {
         let parent = std::path::Path::new(config_path).parent().ok_or(
             ChannelError::ChannelConfigFailure(String::from("failed to find parent of config")),
         )?;
-        playout_folder = parent.join(&playout_folder).canonicalize()?;
+        expanded_playout_folder = parent.join(&expanded_playout_folder).canonicalize()?;
     }
 
-    log::debug!("playout folder is {}", playout_folder.to_string_lossy());
+    log::debug!(
+        "playout folder is {}",
+        expanded_playout_folder.to_string_lossy()
+    );
 
     // find first playout JSON in folder
-    let mut entries = tokio::fs::read_dir(playout_folder)
+    let mut entries = tokio::fs::read_dir(expanded_playout_folder)
         .await
         .map_err(|e| ChannelError::ChannelConfigFailure(e.to_string()))?;
     while let Ok(Some(entry)) = entries.next_entry().await {
@@ -185,19 +193,37 @@ async fn get_current_item(
             .into_os_string()
             .into_string()
             .map_err(|_| ChannelError::ChannelConfigFailure(String::from("os string error")))?;
-        if path.ends_with(".json") {
-            log::debug!("playout JSON is {path}");
 
-            // load playout JSON
-            let playout_result = ersatztv_playout::playout::from_file(&path).await?;
+        if let Some(file_name_os) = entry.path().file_stem() {
+            let file_name = file_name_os
+                .to_os_string()
+                .into_string()
+                .map_err(|_| ChannelError::ChannelConfigFailure(String::from("os string error")))?;
 
-            // find current item
-            return playout_result
-                .playout
-                .items
-                .into_iter()
-                .next()
-                .ok_or(ChannelError::PlayoutJsonNoItem);
+            if path.ends_with(".json") {
+                let split: Vec<&str> = file_name.split("_").collect();
+                if split.len() == 2 {
+                    let maybe_start = OffsetDateTime::parse(split[0], &Rfc3339).ok();
+                    let maybe_finish = OffsetDateTime::parse(split[1], &Rfc3339).ok();
+                    if let (Some(start), Some(finish)) = (maybe_start, maybe_finish)
+                        && now >= start
+                        && now <= finish
+                    {
+                        log::debug!("playout JSON is {path}");
+
+                        // load playout JSON
+                        let playout_result = ersatztv_playout::playout::from_file(&path).await?;
+
+                        // find current item
+                        return playout_result
+                            .playout
+                            .items
+                            .into_iter()
+                            .next()
+                            .ok_or(ChannelError::PlayoutJsonNoItem);
+                    }
+                }
+            }
         }
     }
 

@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 
 use crate::error::PlayoutError;
 
@@ -25,10 +24,11 @@ impl Playout {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayoutItem {
     pub id: String,
-    pub start: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub start: OffsetDateTime,
     pub source: Option<PlayoutItemSource>,
     pub tracks: Option<PlayoutItemTracks>,
-    pub duration_ms: u128,
+    pub duration_ms: u64,
 }
 
 impl PlayoutItem {
@@ -40,13 +40,17 @@ impl PlayoutItem {
     ) -> Result<PlayoutItem, PlayoutError> {
         Ok(PlayoutItem {
             id,
-            start: start.format(&Rfc3339)?,
+            start,
             source: Some(PlayoutItemSource::Local {
                 path: path.to_string_lossy().to_string(),
             }),
             tracks: None,
-            duration_ms: duration.as_millis(),
+            duration_ms: duration.as_millis() as u64,
         })
+    }
+
+    pub fn finish(&self) -> OffsetDateTime {
+        self.start + Duration::from_millis(self.duration_ms)
     }
 }
 

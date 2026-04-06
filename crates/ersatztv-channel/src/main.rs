@@ -1,6 +1,8 @@
 mod config;
 mod error;
 
+use std::time::Duration;
+
 use clap::Parser;
 use ersatztv_core::{READY_FILE_NAME, READY_FILE_TIMEOUT, empty_folder, wait_for_file};
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource};
@@ -40,6 +42,12 @@ async fn run() -> Result<(), ChannelError> {
 
     // find current item
     let current_item = get_current_item(&args.config_path, &channel_config).await?;
+    let finish = current_item.start + Duration::from_millis(current_item.duration_ms as u64);
+    log::debug!(
+        "current playout item starts at {} and finishes at {}",
+        current_item.start,
+        finish
+    );
 
     let current_source = current_item
         .source
@@ -219,7 +227,7 @@ async fn get_current_item(
                             .playout
                             .items
                             .into_iter()
-                            .next()
+                            .rfind(|i| now >= i.start && now <= i.finish())
                             .ok_or(ChannelError::PlayoutJsonNoItem);
                     }
                 }

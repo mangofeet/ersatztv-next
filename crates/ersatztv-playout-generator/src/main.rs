@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use clap::Parser;
-use ersatztv_playout::playout::PlayoutItem;
+use ersatztv_playout::playout::{Playout, PlayoutItem};
 use ffpipeline::probe::ProbeResult;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -89,7 +89,8 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
     }
 
     let output_path = args.output_folder.join(&output_file);
-    let output_string = serde_json::to_string(&playout_items)?;
+    let playout = Playout::new(playout_items);
+    let output_string = serde_json::to_string(&playout)?;
     tokio::fs::write(&output_path, output_string).await?;
 
     Ok(())

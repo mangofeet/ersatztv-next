@@ -7,10 +7,19 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::error::PlayoutError;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Playout {
     pub version: String,
     pub items: Vec<PlayoutItem>,
+}
+
+impl Playout {
+    pub fn new(items: Vec<PlayoutItem>) -> Self {
+        Playout {
+            version: String::from("https://ersatztv.org/playout/version/0.0.1"),
+            items,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

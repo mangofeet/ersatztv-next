@@ -41,7 +41,8 @@ async fn run() -> Result<(), ChannelError> {
     let channel_config = config::from_file(&args.config_path).await?;
 
     // find current item
-    let current_item = get_current_item(&args.config_path, &channel_config).await?;
+    let now = OffsetDateTime::now_local()?;
+    let current_item = get_current_item(&args.config_path, &channel_config, &now).await?;
     let finish = current_item.start + Duration::from_millis(current_item.duration_ms as u64);
     log::debug!(
         "current playout item starts at {} and finishes at {}",
@@ -111,8 +112,10 @@ async fn run() -> Result<(), ChannelError> {
                     .accel
                     .map(HardwareAccel::from),
             );
+            let seek =
+                Duration::from_millis((now - current_item.start).whole_milliseconds() as u64);
             let pipeline_result =
-                pipeline::generate_pipeline(probe_result, output_settings, output_file)?;
+                pipeline::generate_pipeline(seek, probe_result, output_settings, output_file)?;
             log::debug!("pipeline result: {pipeline_result}");
 
             // stream current item
@@ -172,10 +175,10 @@ async fn run() -> Result<(), ChannelError> {
 async fn get_current_item(
     config_path: &std::path::PathBuf,
     channel_config: &ChannelConfig,
+    now: &OffsetDateTime,
 ) -> Result<PlayoutItem, ChannelError> {
     // TODO: refactor selecting playout file
 
-    let now = OffsetDateTime::now_local()?;
     let playout_folder = std::path::PathBuf::from(&channel_config.playout.folder);
     let mut expanded_playout_folder =
         expand_tilde(&playout_folder).ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
@@ -214,8 +217,8 @@ async fn get_current_item(
                     let maybe_start = OffsetDateTime::parse(split[0], &Rfc3339).ok();
                     let maybe_finish = OffsetDateTime::parse(split[1], &Rfc3339).ok();
                     if let (Some(start), Some(finish)) = (maybe_start, maybe_finish)
-                        && now >= start
-                        && now <= finish
+                        && now >= &start
+                        && now <= &finish
                     {
                         log::debug!("playout JSON is {path}");
 
@@ -227,7 +230,7 @@ async fn get_current_item(
                             .playout
                             .items
                             .into_iter()
-                            .rfind(|i| now >= i.start && now <= i.finish())
+                            .rfind(|i| now >= &i.start && now <= &i.finish())
                             .ok_or(ChannelError::PlayoutJsonNoItem);
                     }
                 }

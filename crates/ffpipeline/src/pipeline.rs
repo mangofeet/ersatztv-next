@@ -1,4 +1,5 @@
 use std::fmt::Formatter;
+use std::time::Duration;
 
 use crate::error::FFPipelineError;
 use crate::output::OutputSettings;
@@ -183,7 +184,7 @@ impl OutputOption {
 }
 
 pub enum PipelineInput {
-    Video(String),
+    Video { path: String, seek: Duration },
 }
 
 pub struct PipelineOutput {
@@ -199,6 +200,7 @@ pub struct Pipeline {
 
 impl Pipeline {
     fn full(
+        seek: Duration,
         probe_result: ProbeResult,
         output_settings: OutputSettings,
         output: String,
@@ -235,7 +237,10 @@ impl Pipeline {
                 GlobalOption::LogLevel(LogLevel::Error),
                 GlobalOption::HardwareAccel(output_settings.accel),
             ],
-            inputs: vec![PipelineInput::Video(probe_result.path)],
+            inputs: vec![PipelineInput::Video {
+                path: probe_result.path,
+                seek,
+            }],
             output_options: vec![
                 OutputOption::AudioCodec(audio_codec),
                 OutputOption::AudioBitrate(output_settings.audio_bitrate),
@@ -257,7 +262,13 @@ impl Pipeline {
 
         for input in &self.inputs {
             match input {
-                PipelineInput::Video(path) => result.extend([String::from("-i"), path.to_owned()]),
+                PipelineInput::Video { path, seek } => {
+                    if !seek.is_zero() {
+                        result.extend([String::from("-ss"), format!("{}ms", seek.as_millis())]);
+                    }
+
+                    result.extend([String::from("-i"), path.to_owned()])
+                }
             }
         }
 
@@ -278,9 +289,10 @@ impl std::fmt::Display for Pipeline {
 }
 
 pub fn generate_pipeline(
+    seek: Duration,
     probe_result: ProbeResult,
     output_settings: OutputSettings,
     output: String,
 ) -> Result<Pipeline, FFPipelineError> {
-    Ok(Pipeline::full(probe_result, output_settings, output))
+    Ok(Pipeline::full(seek, probe_result, output_settings, output))
 }

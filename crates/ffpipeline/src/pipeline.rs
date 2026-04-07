@@ -22,12 +22,14 @@ pub enum VideoFormat {
 
 #[derive(Debug, Clone, Copy)]
 pub enum HardwareAccel {
+    Cuda,
     VideoToolbox,
 }
 
 impl HardwareAccel {
     fn as_arg(&self) -> String {
         match self {
+            HardwareAccel::Cuda => String::from("cuda"),
             HardwareAccel::VideoToolbox => String::from("videotoolbox"),
         }
     }
@@ -120,6 +122,8 @@ impl AudioCodec {
 
 pub enum VideoCodec {
     Copy,
+    H264Nvenc,
+    HevcNvenc,
     H264VideoToolbox,
     HevcVideoToolbox,
     Libx264,
@@ -130,6 +134,8 @@ impl VideoCodec {
     fn as_arg(&self) -> Vec<String> {
         let codec = match self {
             VideoCodec::Copy => String::from("copy"),
+            VideoCodec::H264Nvenc => String::from("h264_nvenc"),
+            VideoCodec::HevcNvenc => String::from("hevc_nvenc"),
             VideoCodec::H264VideoToolbox => String::from("h264_videotoolbox"),
             VideoCodec::HevcVideoToolbox => String::from("hevc_videotoolbox"),
             VideoCodec::Libx264 => String::from("libx264"),
@@ -218,6 +224,12 @@ impl Pipeline {
         };
 
         let video_codec = match (output_settings.accel, output_settings.video_format) {
+            (Some(HardwareAccel::Cuda), Some(VideoFormat::H264)) => {
+                VideoCodec::H264Nvenc
+            }
+            (Some(HardwareAccel::Cuda), Some(VideoFormat::Hevc)) => {
+                VideoCodec::HevcNvenc
+            }
             (Some(HardwareAccel::VideoToolbox), Some(VideoFormat::H264)) => {
                 VideoCodec::H264VideoToolbox
             }

@@ -10,4 +10,4 @@ buffer_kbps = 384
 format = "h264"
 bitrate_kbps = 2_000
 buffer_kbps = 4_000
-accel = "videotoolbox"
+#accel = "videotoolbox"

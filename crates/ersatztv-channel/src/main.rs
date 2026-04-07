@@ -6,6 +6,7 @@ use std::time::Duration;
 use clap::Parser;
 use ersatztv_core::{READY_FILE_NAME, READY_FILE_TIMEOUT, empty_folder, wait_for_file};
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource};
+use ffpipeline::input::{InputSettings, ProbedInput};
 use ffpipeline::output::OutputSettings;
 use ffpipeline::pipeline::{AudioFormat, HardwareAccel, Kbps, VideoFormat};
 use ffpipeline::{pipeline, probe};
@@ -91,31 +92,41 @@ async fn run() -> Result<(), ChannelError> {
             }
 
             // generate pipeline
-            let output_settings = OutputSettings::new(
-                channel_config
+            let output_settings = OutputSettings {
+                audio_format: channel_config
                     .normalization
                     .audio
                     .format
                     .map(AudioFormat::from),
-                channel_config.normalization.audio.bitrate_kbps.map(Kbps),
-                channel_config.normalization.audio.buffer_kbps.map(Kbps),
-                channel_config
+                audio_bitrate: channel_config.normalization.audio.bitrate_kbps.map(Kbps),
+                audio_buffer: channel_config.normalization.audio.buffer_kbps.map(Kbps),
+                video_format: channel_config
                     .normalization
                     .video
                     .format
                     .map(VideoFormat::from),
-                channel_config.normalization.video.bitrate_kbps.map(Kbps),
-                channel_config.normalization.video.buffer_kbps.map(Kbps),
-                channel_config
+                video_bitrate: channel_config.normalization.video.bitrate_kbps.map(Kbps),
+                video_buffer: channel_config.normalization.video.buffer_kbps.map(Kbps),
+                accel: channel_config
                     .normalization
                     .video
                     .accel
                     .map(HardwareAccel::from),
-            );
-            let seek =
+                format: pipeline::OutputFormat::Hls(output_file),
+            };
+            let in_point =
                 Duration::from_millis((now - current_item.start).whole_milliseconds() as u64);
-            let pipeline_result =
-                pipeline::generate_pipeline(seek, probe_result, output_settings, output_file)?;
+            let out_point = in_point + Duration::from_millis(current_item.duration_ms);
+
+            let input_settings = InputSettings {
+                input: ProbedInput {
+                    in_point,
+                    out_point,
+                    probe_result,
+                },
+            };
+
+            let pipeline_result = pipeline::generate_pipeline(input_settings, output_settings)?;
             log::debug!("pipeline result: {pipeline_result}");
 
             // stream current item

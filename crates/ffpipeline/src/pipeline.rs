@@ -2,8 +2,8 @@ use std::fmt::Formatter;
 use std::time::Duration;
 
 use crate::error::FFPipelineError;
+use crate::input::InputSettings;
 use crate::output::OutputSettings;
-use crate::probe::ProbeResult;
 
 #[derive(Debug, Clone, Copy)]
 pub enum AudioFormat {
@@ -68,14 +68,15 @@ impl GlobalOption {
     }
 }
 
+#[derive(Debug)]
 pub enum OutputFormat {
-    Hls,
+    Hls(String),
 }
 
 impl OutputFormat {
     fn as_arg(&self) -> Vec<String> {
         match self {
-            OutputFormat::Hls => [
+            OutputFormat::Hls(_) => [
                 "-f",
                 "hls",
                 "-hls_time",
@@ -89,6 +90,12 @@ impl OutputFormat {
             ]
             .map(String::from)
             .to_vec(),
+        }
+    }
+
+    fn path(&self) -> String {
+        match self {
+            OutputFormat::Hls(path) => path.clone(),
         }
     }
 }
@@ -141,7 +148,7 @@ pub enum OutputOption {
     AudioCodec(AudioCodec),
     AudioBitrate(Option<Kbps>),
     AudioBuffer(Option<Kbps>),
-    Duration(std::time::Duration),
+    Duration(Duration),
 }
 
 impl OutputOption {
@@ -199,17 +206,10 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    fn full(
-        seek: Duration,
-        probe_result: ProbeResult,
-        output_settings: OutputSettings,
-        output: String,
-    ) -> Pipeline {
+    fn full(input_settings: InputSettings, output_settings: OutputSettings) -> Pipeline {
         // for now, limit to 30s
-        let duration = match probe_result.duration {
-            Some(probed_duration) => probed_duration.min(std::time::Duration::from_secs(30)),
-            None => std::time::Duration::from_secs(30),
-        };
+        let requested_duration = input_settings.input.out_point - input_settings.input.in_point;
+        let duration = requested_duration.min(Duration::from_secs(30));
 
         let audio_codec = match output_settings.audio_format {
             Some(AudioFormat::Aac) => AudioCodec::Aac,
@@ -229,6 +229,8 @@ impl Pipeline {
             _ => VideoCodec::Copy,
         };
 
+        let output_path = output_settings.format.path();
+
         Pipeline {
             global_options: vec![
                 GlobalOption::Threads(0),
@@ -238,8 +240,8 @@ impl Pipeline {
                 GlobalOption::HardwareAccel(output_settings.accel),
             ],
             inputs: vec![PipelineInput::Video {
-                path: probe_result.path,
-                seek,
+                path: input_settings.input.probe_result.path,
+                seek: input_settings.input.in_point,
             }],
             output_options: vec![
                 OutputOption::AudioCodec(audio_codec),
@@ -248,10 +250,10 @@ impl Pipeline {
                 OutputOption::VideoCodec(video_codec),
                 OutputOption::VideoBitrate(output_settings.video_bitrate),
                 OutputOption::VideoBuffer(output_settings.video_buffer),
-                OutputOption::Format(OutputFormat::Hls),
+                OutputOption::Format(output_settings.format),
                 OutputOption::Duration(duration),
             ],
-            output: PipelineOutput { path: output },
+            output: PipelineOutput { path: output_path },
         }
     }
 
@@ -289,10 +291,8 @@ impl std::fmt::Display for Pipeline {
 }
 
 pub fn generate_pipeline(
-    seek: Duration,
-    probe_result: ProbeResult,
+    input_settings: InputSettings,
     output_settings: OutputSettings,
-    output: String,
 ) -> Result<Pipeline, FFPipelineError> {
-    Ok(Pipeline::full(seek, probe_result, output_settings, output))
+    Ok(Pipeline::full(input_settings, output_settings))
 }

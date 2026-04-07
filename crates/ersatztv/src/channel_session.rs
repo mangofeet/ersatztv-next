@@ -10,7 +10,6 @@ use crate::error::LineupError;
 pub struct ChannelSession {
     _output_folder: PathBuf,
     _child: Child,
-    multi_variant: String,
     ready_receiver: watch::Receiver<bool>,
 }
 
@@ -22,9 +21,6 @@ impl ChannelSession {
             .arg(channel.config_path())
             .spawn()
             .map_err(LineupError::Io)?;
-
-        // not actually multi-variant, this is the variant playlist
-        let multi_variant = format!("/session/{}/live.m3u8", &channel.number());
 
         let (ready_sender, ready_receiver) = watch::channel(false);
         let ready_file = channel.output_folder().join(READY_FILE_NAME);
@@ -38,17 +34,12 @@ impl ChannelSession {
         Ok(ChannelSession {
             _output_folder: channel.output_folder().to_owned(),
             _child: child,
-            multi_variant,
             ready_receiver,
         })
     }
 
     pub fn subscribe_ready(&self) -> watch::Receiver<bool> {
         self.ready_receiver.clone()
-    }
-
-    pub fn multi_variant(&self) -> &str {
-        &self.multi_variant
     }
 }
 

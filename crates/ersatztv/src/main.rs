@@ -93,7 +93,7 @@ async fn run() -> Result<(), LineupError> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     let app = Router::new()
-        .route("/channel/{number}", get(stream))
+        .route("/channel/{filename}", get(stream))
         .nest_service(
             "/session",
             tower_http::services::ServeDir::new(&lineup_config.output.folder),
@@ -109,29 +109,30 @@ async fn run() -> Result<(), LineupError> {
 }
 
 async fn stream(
-    Path(number): Path<String>,
+    Path(filename): Path<String>,
     State(state): State<Arc<LineupState>>,
+    request: axum::extract::Request,
 ) -> Result<impl IntoResponse, LineupError> {
+    let number = filename
+        .strip_suffix(".m3u8")
+        .ok_or(LineupError::ChannelNotFound(filename.clone()))?;
+
     let channel = state
         .channels
         .iter()
         .find(|c| c.number() == number)
-        .ok_or(LineupError::ChannelNotFound(number.clone()))?;
+        .ok_or(LineupError::ChannelNotFound(number.to_owned()))?;
 
-    let (multi_variant, mut ready_receiver) = {
+    let mut ready_receiver = {
         let mut active = state.active.lock().await;
 
-        if let Some(channel_session) = active.get(&number) {
-            (
-                channel_session.multi_variant().to_owned(),
-                channel_session.subscribe_ready(),
-            )
+        if let Some(channel_session) = active.get(number) {
+            channel_session.subscribe_ready()
         } else {
             let channel_session = ChannelSession::spawn(channel)?;
-            let multi_variant = channel_session.multi_variant().to_owned();
             let ready_receiver = channel_session.subscribe_ready();
-            active.insert(number, channel_session);
-            (multi_variant, ready_receiver)
+            active.insert(number.to_owned(), channel_session);
+            ready_receiver
         }
     };
 
@@ -140,7 +141,23 @@ async fn stream(
         .await
         .map_err(|_| LineupError::ChannelNotFound(String::from("channel timeout")))?;
 
-    Ok(axum::response::Redirect::temporary(&multi_variant))
+    // TODO: need scheme, host from reverse proxy
+    let host = request
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+
+    let content =
+        get_multi_variant(channel).replace("/session/", &format!("http://{host}/session/"));
+
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "application/vnd.apple.mpegurl",
+        )],
+        content,
+    ))
 }
 
 struct LineupState {
@@ -160,4 +177,16 @@ async fn fix_content_types(
             .insert(axum::http::header::CONTENT_TYPE, value);
     }
     response
+}
+
+fn get_multi_variant(channel: &ChannelModel) -> String {
+    format!(
+        "\
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-STREAM-INF
+/session/{}/live.m3u8
+",
+        channel.number()
+    )
 }

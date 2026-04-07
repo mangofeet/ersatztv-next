@@ -25,13 +25,12 @@ impl ChannelModel {
             channel_config = parent.join(&channel_config).canonicalize()?;
         }
 
-        let mut output_folder = PathBuf::from(output_folder);
-        output_folder = output_folder.join(&channel.number);
+        let output_folder = PathBuf::from(output_folder);
 
         Ok(ChannelModel {
-            number: channel.number,
+            number: channel.number.clone(),
             config_path: channel_config,
-            output_folder,
+            output_folder: output_folder.join(&channel.number),
         })
     }
 

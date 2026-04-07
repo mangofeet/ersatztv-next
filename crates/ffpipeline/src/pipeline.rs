@@ -224,12 +224,8 @@ impl Pipeline {
         };
 
         let video_codec = match (output_settings.accel, output_settings.video_format) {
-            (Some(HardwareAccel::Cuda), Some(VideoFormat::H264)) => {
-                VideoCodec::H264Nvenc
-            }
-            (Some(HardwareAccel::Cuda), Some(VideoFormat::Hevc)) => {
-                VideoCodec::HevcNvenc
-            }
+            (Some(HardwareAccel::Cuda), Some(VideoFormat::H264)) => VideoCodec::H264Nvenc,
+            (Some(HardwareAccel::Cuda), Some(VideoFormat::Hevc)) => VideoCodec::HevcNvenc,
             (Some(HardwareAccel::VideoToolbox), Some(VideoFormat::H264)) => {
                 VideoCodec::H264VideoToolbox
             }

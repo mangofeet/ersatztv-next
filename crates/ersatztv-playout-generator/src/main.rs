@@ -13,7 +13,7 @@ use walkdir::WalkDir;
 
 use crate::error::PlayoutGeneratorError;
 
-static VIDEO_EXTENSIONS: &[&str] = &["mkv", "mov"];
+static VIDEO_EXTENSIONS: &[&str] = &["mkv", "mov", "mp4"];
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -75,8 +75,8 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
             && let Ok(playout_item) = PlayoutItem::new(
                 uuid::Uuid::new_v4().to_string(),
                 current_time,
+                current_time + scheduled_duration,
                 path,
-                scheduled_duration,
             )
         {
             playout_items.push(playout_item);

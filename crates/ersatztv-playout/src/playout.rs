@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -26,31 +25,32 @@ pub struct PlayoutItem {
     pub id: String,
     #[serde(with = "time::serde::rfc3339")]
     pub start: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub finish: OffsetDateTime,
     pub source: Option<PlayoutItemSource>,
     pub tracks: Option<PlayoutItemTracks>,
-    pub duration_ms: u64,
 }
 
 impl PlayoutItem {
     pub fn new(
         id: String,
         start: OffsetDateTime,
+        finish: OffsetDateTime,
         path: &Path,
-        duration: Duration,
     ) -> Result<PlayoutItem, PlayoutError> {
         Ok(PlayoutItem {
             id,
             start,
+            finish,
             source: Some(PlayoutItemSource::Local {
                 path: path.to_string_lossy().to_string(),
             }),
             tracks: None,
-            duration_ms: duration.as_millis() as u64,
         })
     }
 
     pub fn finish(&self) -> OffsetDateTime {
-        self.start + Duration::from_millis(self.duration_ms)
+        self.finish
     }
 }
 

@@ -5,6 +5,9 @@ use crate::error::FFPipelineError;
 use crate::input::InputSettings;
 use crate::output::OutputSettings;
 
+const KEYFRAME_INTERVAL_SECONDS: u8 = 2;
+const SEGMENT_SECONDS: u8 = 4;
+
 #[derive(Debug, Clone, Copy)]
 pub enum AudioFormat {
     Aac,
@@ -72,32 +75,76 @@ impl GlobalOption {
 
 #[derive(Debug)]
 pub enum OutputFormat {
-    Hls(String),
+    Hls {
+        playlist: String,
+        segment_template: String,
+    },
 }
 
 impl OutputFormat {
-    fn as_arg(&self) -> Vec<String> {
-        match self {
-            OutputFormat::Hls(_) => [
+    fn as_arg(&self, video_codec: &VideoCodec) -> Vec<String> {
+        let segment_seconds = format!("{SEGMENT_SECONDS}");
+
+        match (self, video_codec) {
+            (
+                OutputFormat::Hls {
+                    segment_template, ..
+                },
+                VideoCodec::Copy,
+            ) => [
                 "-f",
                 "hls",
                 "-hls_time",
-                "4",
+                &segment_seconds,
                 "-hls_list_size",
                 "0",
                 "-segment_list_flags",
                 "+live",
+                "-hls_segment_filename",
+                segment_template,
                 "-hls_segment_type",
                 "mpegts",
+                "-hls_flags",
+                "program_date_time+omit_endlist+append_list",
             ]
             .map(String::from)
             .to_vec(),
+            (
+                OutputFormat::Hls {
+                    segment_template, ..
+                },
+                _,
+            ) => {
+                let force_key_frames_expr =
+                    format!("expr:gte(t,n_forced*{KEYFRAME_INTERVAL_SECONDS})");
+                [
+                    // TODO: get frame rate to determine GOP/keyint
+                    "-force_key_frames",
+                    &force_key_frames_expr,
+                    "-f",
+                    "hls",
+                    "-hls_time",
+                    &segment_seconds,
+                    "-hls_list_size",
+                    "0",
+                    "-segment_list_flags",
+                    "+live",
+                    "-hls_segment_filename",
+                    segment_template,
+                    "-hls_segment_type",
+                    "mpegts",
+                    "-hls_flags",
+                    "program_date_time+omit_endlist+append_list",
+                ]
+                .map(String::from)
+                .to_vec()
+            }
         }
     }
 
     fn path(&self) -> String {
         match self {
-            OutputFormat::Hls(path) => path.clone(),
+            OutputFormat::Hls { playlist, .. } => playlist.clone(),
         }
     }
 }
@@ -120,6 +167,7 @@ impl AudioCodec {
     }
 }
 
+#[derive(Copy, Clone)]
 pub enum VideoCodec {
     Copy,
     H264Nvenc,
@@ -158,9 +206,9 @@ pub enum OutputOption {
 }
 
 impl OutputOption {
-    fn as_arg(&self) -> Vec<String> {
+    fn as_arg(&self, video_codec: &VideoCodec) -> Vec<String> {
         match self {
-            OutputOption::Format(format) => format.as_arg(),
+            OutputOption::Format(format) => format.as_arg(video_codec),
             OutputOption::VideoCodec(codec) => codec.as_arg(),
             OutputOption::VideoBitrate(Some(bitrate_kbps)) => {
                 vec![
@@ -209,13 +257,13 @@ pub struct Pipeline {
     inputs: Vec<PipelineInput>,
     output_options: Vec<OutputOption>,
     output: PipelineOutput,
+
+    video_codec: VideoCodec,
 }
 
 impl Pipeline {
     fn full(input_settings: InputSettings, output_settings: OutputSettings) -> Pipeline {
-        // for now, limit to 30s
-        let requested_duration = input_settings.input.out_point - input_settings.input.in_point;
-        let duration = requested_duration.min(Duration::from_secs(30));
+        let duration = input_settings.input.out_point - input_settings.input.in_point;
 
         let audio_codec = match output_settings.audio_format {
             Some(AudioFormat::Aac) => AudioCodec::Aac,
@@ -262,6 +310,8 @@ impl Pipeline {
                 OutputOption::Duration(duration),
             ],
             output: PipelineOutput { path: output_path },
+
+            video_codec,
         }
     }
 
@@ -284,7 +334,11 @@ impl Pipeline {
 
         // TODO: filter_complex
 
-        result.extend(self.output_options.iter().flat_map(|o| o.as_arg()));
+        result.extend(
+            self.output_options
+                .iter()
+                .flat_map(|o| o.as_arg(&self.video_codec)),
+        );
 
         result.extend([self.output.path.to_owned()]);
 

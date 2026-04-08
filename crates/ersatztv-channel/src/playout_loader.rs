@@ -57,7 +57,7 @@ impl PlayoutLoader {
                         let maybe_finish = OffsetDateTime::parse(split[1], &Rfc3339).ok();
                         if let (Some(start), Some(finish)) = (maybe_start, maybe_finish)
                             && now >= &start
-                            && now <= &finish
+                            && now < &finish
                         {
                             log::debug!("playout JSON is {path}");
 
@@ -70,7 +70,7 @@ impl PlayoutLoader {
                                 .playout
                                 .items
                                 .into_iter()
-                                .rfind(|i| now >= &i.start && now <= &i.finish())
+                                .rfind(|i| now >= &i.start && now < &i.finish())
                                 .ok_or(ChannelError::PlayoutJsonNoItem);
                         }
                     }

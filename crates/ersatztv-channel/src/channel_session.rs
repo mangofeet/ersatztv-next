@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use ersatztv_core::{READY_FILE_NAME, READY_FILE_TIMEOUT, empty_folder, wait_for_file};
+use ersatztv_core::{READY_FILE_NAME, empty_folder};
 use ersatztv_playout::playout::PlayoutItemSource;
 use ffpipeline::input::{InputSettings, ProbedInput};
 use ffpipeline::output::OutputSettings;
@@ -21,7 +21,9 @@ pub struct ChannelSession {
     transcoded_until: OffsetDateTime,
     output_folder: PathBuf,
     ready_file: PathBuf,
+
     output_file: String,
+    output_segment_template: String,
 }
 
 impl ChannelSession {
@@ -38,6 +40,12 @@ impl ChannelSession {
             .into_string()
             .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
 
+        let output_segment_template = output_folder
+            .join("live%06d.ts")
+            .into_os_string()
+            .into_string()
+            .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
+
         let ready_file = output_folder.join(READY_FILE_NAME);
 
         Ok(ChannelSession {
@@ -47,13 +55,38 @@ impl ChannelSession {
             output_folder,
             ready_file,
             output_file,
+            output_segment_template,
         })
     }
 
-    pub async fn run(&self) -> Result<(), ChannelError> {
+    pub fn output_file(&self) -> &str {
+        &self.output_file
+    }
+
+    pub fn output_folder(&self) -> &PathBuf {
+        &self.output_folder
+    }
+
+    pub fn ready_file(&self) -> &PathBuf {
+        &self.ready_file
+    }
+
+    pub async fn run(&mut self) -> Result<(), ChannelError> {
         self.prep_output_folder().await?;
+
         self.transcode().await?;
-        Ok(())
+
+        loop {
+            let now = OffsetDateTime::now_local()?;
+            let transcoded_buffer =
+                std::cmp::max(time::Duration::new(0, 0), self.transcoded_until - now);
+            log::debug!("transcoded buffer: {}", transcoded_buffer);
+            if transcoded_buffer <= time::Duration::minutes(1) {
+                self.transcode().await?;
+            } else {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+        }
     }
 
     async fn prep_output_folder(&self) -> Result<(), ChannelError> {
@@ -76,7 +109,7 @@ impl ChannelSession {
         Ok(())
     }
 
-    async fn transcode(&self) -> Result<(), ChannelError> {
+    async fn transcode(&mut self) -> Result<(), ChannelError> {
         // TODO: get last pts offset
         // TODO: work ahead vs realtime
 
@@ -85,7 +118,6 @@ impl ChannelSession {
             .playout_loader
             .get_current_item(&self.transcoded_until)
             .await?;
-        //let finish = current_item.start + Duration::from_millis(current_item.duration_ms);
 
         let current_source = current_item
             .source
@@ -156,12 +188,29 @@ impl ChannelSession {
                 .accel
                 .clone()
                 .map(HardwareAccel::from),
-            format: pipeline::OutputFormat::Hls(self.output_file.clone()),
+            format: pipeline::OutputFormat::Hls {
+                playlist: self.output_file.clone(),
+                segment_template: self.output_segment_template.clone(),
+            },
         };
-        let in_point = Duration::from_millis(
-            (self.transcoded_until - current_item.start).whole_milliseconds() as u64,
-        );
-        let out_point = in_point + Duration::from_millis(current_item.duration_ms);
+
+        // TODO: in and out points from playout item
+        let in_point = if self.transcoded_until > current_item.start {
+            Duration::from_millis(
+                (self.transcoded_until - current_item.start).whole_milliseconds() as u64,
+            )
+        } else {
+            Duration::ZERO
+        };
+        let out_point = if self.transcoded_until > current_item.start {
+            Duration::from_millis(
+                (current_item.finish - self.transcoded_until).whole_milliseconds() as u64,
+            )
+        } else {
+            Duration::from_millis(
+                (current_item.finish - current_item.start).whole_milliseconds() as u64,
+            )
+        };
 
         let input_settings = InputSettings {
             input: ProbedInput {
@@ -180,49 +229,23 @@ impl ChannelSession {
             .spawn()
             .map_err(|_| ChannelError::StreamFailure(String::from("failed to spawn ffmpeg")))?;
 
-        let (ready, ffmpeg_already_exited) = tokio::select! {
-            status = ffmpeg_child.wait() => {
-                let status = status.map_err(|_| ChannelError::StreamFailure(String::from("ffmpeg exit code")))?;
-                if !status.success() {
-                    return Err(ChannelError::StreamFailure(String::from("ffmpeg exit code")));
-                }
+        log::debug!("waiting for ffmpeg to terminate...");
 
-                (true, true)
-            }
+        let status = ffmpeg_child
+            .wait()
+            .await
+            .map_err(|e| ChannelError::StreamFailure(e.to_string()))?;
 
-            // wait for segment #4 to exist
-            result = async {
-                let target_file = self.output_folder.join("live3.ts");
-                return wait_for_file(&target_file, READY_FILE_TIMEOUT).await;
-            } => {
-                (result, false)
-            }
-        };
-
-        if ready {
-            tokio::fs::write(&self.ready_file, b"").await?;
-
-            if !ffmpeg_already_exited {
-                log::debug!("waiting for ffmpeg to terminate...");
-                let status = ffmpeg_child
-                    .wait()
-                    .await
-                    .map_err(|e| ChannelError::StreamFailure(e.to_string()))?;
-                log::debug!("ffmpeg exited with status: {status}");
-                if !status.success() {
-                    return Err(ChannelError::StreamFailure(format!(
-                        "ffmoeg exited: {status}"
-                    )));
-                }
-            }
-
-            Ok(())
-        } else {
-            ffmpeg_child.kill().await.ok();
-            Err(ChannelError::StreamFailure(String::from(
-                "not ready in time",
-            )))
+        if !status.success() {
+            return Err(ChannelError::StreamFailure(format!(
+                "ffmpeg exited {status}"
+            )));
         }
+
+        self.transcoded_until = current_item.finish;
+        log::debug!("transcoded until: {}", current_item.finish);
+
+        Ok(())
     }
 
     // TODO: trim and delete

@@ -5,6 +5,7 @@
     {
       "id": "1",
       "start": "2026-02-23T20:00:00.000-05:00",
+      "finish": "2026-02-23T20:09:56.460-05:00",
       "source": {
         "source_type": "local",
         "path": "~/Videos/movies/Big Buck Bunny (2008)/Big Buck Bunny (2008).mov"
@@ -13,12 +14,12 @@
         "audio": {
           "stream_index": 1
         }
-      },
-      "duration_ms": 596460
+      }
     },
     {
       "id": "2",
       "start": "2026-02-23T20:09:56.460-05:00",
+      "finish": "2026-02-23T20:10:06.460-05:00",
       "tracks": {
         "audio": {
           "source": {
@@ -32,8 +33,7 @@
             "path": "/home/jason/Pictures/be-right-back.png"
           }
         }
-      },
-      "duration_ms": 10000
+      }
     }
   ]
 }

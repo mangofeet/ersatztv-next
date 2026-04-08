@@ -233,8 +233,9 @@ impl ChannelSession {
             },
         };
 
-        let pipeline_result = pipeline::generate_pipeline(input_settings, output_settings)?;
-        log::debug!("pipeline result: {pipeline_result}");
+        let mut pipeline_result = pipeline::generate_pipeline(input_settings, output_settings)?;
+        pipeline_result.optimize();
+        log::debug!("optimized pipeline: {pipeline_result}");
 
         // stream current item
         let mut ffmpeg_child = tokio::process::Command::new("ffmpeg")

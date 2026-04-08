@@ -135,7 +135,7 @@ impl OutputFormat {
                     "-hls_segment_type",
                     "mpegts",
                     "-hls_flags",
-                    "program_date_time+omit_endlist+append_list",
+                    "program_date_time+omit_endlist+append_list+independent_segments",
                 ]);
 
                 match output_context.pts_offset {
@@ -158,6 +158,7 @@ impl OutputFormat {
     }
 }
 
+#[derive(Copy, Clone, PartialEq)]
 pub enum AudioCodec {
     Copy,
     Aac,
@@ -176,7 +177,7 @@ impl AudioCodec {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum VideoCodec {
     Copy,
     H264Nvenc,
@@ -205,6 +206,7 @@ impl VideoCodec {
 
 struct OutputContext {
     media_frame_rate: FrameRate,
+    audio_codec: AudioCodec,
     video_codec: VideoCodec,
     pts_offset: Option<PtsOffset>,
 }
@@ -322,6 +324,7 @@ impl Pipeline {
             .unwrap_or(FrameRate::parse("24"));
 
         let output_context = OutputContext {
+            audio_codec,
             video_codec,
             pts_offset: output_settings.pts_offset,
             media_frame_rate,
@@ -352,6 +355,31 @@ impl Pipeline {
             ],
             output: PipelineOutput { path: output_path },
             output_context,
+        }
+    }
+
+    pub fn optimize(&mut self) {
+        // audio copy shouldn't have bitrate etc
+        if self.output_context.audio_codec == AudioCodec::Copy {
+            self.output_options.retain(|o| {
+                !matches!(
+                    o,
+                    OutputOption::AudioBitrate(_) | OutputOption::AudioBuffer(_)
+                )
+            });
+        };
+
+        // video copy shouldn't have bitrate, hwaccel, etc
+        if self.output_context.video_codec == VideoCodec::Copy {
+            self.global_options
+                .retain(|o| !matches!(o, GlobalOption::HardwareAccel(_)));
+
+            self.output_options.retain(|o| {
+                !matches!(
+                    o,
+                    OutputOption::VideoBitrate(_) | OutputOption::VideoBuffer(_)
+                )
+            });
         }
     }
 

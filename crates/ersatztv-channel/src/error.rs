@@ -10,6 +10,9 @@ pub enum ChannelError {
     #[error("unable to load channel config: {0}")]
     ChannelConfigIoFailure(#[from] std::io::Error),
 
+    #[error("failed to expand playout folder")]
+    ChannelConfigPlayoutFolder,
+
     #[error("channel config output folder is required")]
     ChannelConfigOutputFolderRequired,
 

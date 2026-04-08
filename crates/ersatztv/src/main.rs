@@ -181,12 +181,10 @@ async fn fix_content_types(
 
 fn get_multi_variant(channel: &ChannelModel) -> String {
     format!(
-        "\
-#EXTM3U
+        "#EXTM3U
 #EXT-X-VERSION:3
 #EXT-X-STREAM-INF
-/session/{}/live.m3u8
-",
+/session/{}/live.m3u8",
         channel.number()
     )
 }

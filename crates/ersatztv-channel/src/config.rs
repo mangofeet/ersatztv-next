@@ -1,32 +1,38 @@
+use std::path::PathBuf;
+
 use serde::Deserialize;
+use simple_expand_tilde::expand_tilde;
 
 use crate::error::ChannelError;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ChannelConfig {
     pub playout: PlayoutConfig,
     pub normalization: NormalizationConfig,
+
+    #[serde(skip)]
+    expanded_playout_folder: PathBuf,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct PlayoutConfig {
     pub folder: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct NormalizationConfig {
     pub audio: AudioNormalizationConfig,
     pub video: VideoNormalizationConfig,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct AudioNormalizationConfig {
     pub format: Option<AudioFormat>,
     pub bitrate_kbps: Option<u32>,
     pub buffer_kbps: Option<u32>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum AudioFormat {
     Aac,
@@ -42,7 +48,7 @@ impl From<AudioFormat> for ffpipeline::pipeline::AudioFormat {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct VideoNormalizationConfig {
     pub format: Option<VideoFormat>,
     pub bitrate_kbps: Option<u32>,
@@ -50,14 +56,14 @@ pub struct VideoNormalizationConfig {
     pub accel: Option<HardwareAccel>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum VideoFormat {
     H264,
     Hevc,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum HardwareAccel {
     Cuda,
@@ -82,11 +88,34 @@ impl From<VideoFormat> for ffpipeline::pipeline::VideoFormat {
     }
 }
 
-pub async fn from_file(path: &std::path::PathBuf) -> Result<ChannelConfig, ChannelError> {
-    let config_string = tokio::fs::read_to_string(path)
-        .await
-        .map_err(ChannelError::ChannelConfigIoFailure)?;
-    let channel_config: ChannelConfig = toml::from_str(&config_string)
-        .map_err(|e| ChannelError::ChannelConfigFailure(e.to_string()))?;
-    Ok(channel_config)
+impl ChannelConfig {
+    pub async fn from_file(path: &PathBuf) -> Result<ChannelConfig, ChannelError> {
+        // load and deserialize
+        let config_string = tokio::fs::read_to_string(path)
+            .await
+            .map_err(ChannelError::ChannelConfigIoFailure)?;
+        let mut channel_config: ChannelConfig = toml::from_str(&config_string)
+            .map_err(|e| ChannelError::ChannelConfigFailure(e.to_string()))?;
+
+        // expand playout folder
+        let playout_folder = PathBuf::from(&channel_config.playout.folder);
+        let mut expanded_playout_folder =
+            expand_tilde(&playout_folder).ok_or(ChannelError::ChannelConfigPlayoutFolder)?;
+        if expanded_playout_folder.is_relative() {
+            let parent = path
+                .parent()
+                .ok_or(ChannelError::ChannelConfigFailure(String::from(
+                    "failed to find parent of config",
+                )))?;
+            expanded_playout_folder = parent.join(&expanded_playout_folder).canonicalize()?;
+        }
+
+        channel_config.expanded_playout_folder = expanded_playout_folder;
+
+        Ok(channel_config)
+    }
+
+    pub fn expanded_playout_folder(&self) -> &PathBuf {
+        &self.expanded_playout_folder
+    }
 }

@@ -54,9 +54,6 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
     let start = OffsetDateTime::now_local()?.truncate_to_day();
     let formatted_start = start.format(&Rfc3339)?;
     let finish = start + time::Duration::days(1) - time::Duration::seconds(1);
-    let formatted_finish = finish.format(&Rfc3339)?;
-    let output_file = format!("{formatted_start}_{formatted_finish}.json");
-    log::debug!("output_file: {output_file}");
 
     let mut playout_items: Vec<PlayoutItem> = Vec::new();
 
@@ -85,6 +82,10 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
             current_time += scheduled_duration;
         }
     }
+
+    let formatted_finish = current_time.format(&Rfc3339)?;
+    let output_file = format!("{formatted_start}_{formatted_finish}.json");
+    log::debug!("output_file: {output_file}");
 
     if !args.output_folder.exists() {
         tokio::fs::create_dir_all(&args.output_folder).await?;

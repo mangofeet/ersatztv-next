@@ -7,7 +7,7 @@ bitrate_kbps = 192
 buffer_kbps = 384
 
 [normalization.video]
-format = "h264"
+format = "hevc"
 bitrate_kbps = 2_000
 buffer_kbps = 4_000
 accel = "cuda"

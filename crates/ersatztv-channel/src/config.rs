@@ -12,6 +12,9 @@ pub struct ChannelConfig {
 
     #[serde(skip)]
     expanded_playout_folder: PathBuf,
+
+    #[serde(skip)]
+    expanded_output_folder: PathBuf,
 }
 
 #[derive(Deserialize, Clone)]
@@ -89,7 +92,10 @@ impl From<VideoFormat> for ffpipeline::pipeline::VideoFormat {
 }
 
 impl ChannelConfig {
-    pub async fn from_file(path: &PathBuf) -> Result<ChannelConfig, ChannelError> {
+    pub async fn from_file(
+        path: &PathBuf,
+        output_folder: &PathBuf,
+    ) -> Result<ChannelConfig, ChannelError> {
         // load and deserialize
         let config_string = tokio::fs::read_to_string(path)
             .await
@@ -100,7 +106,7 @@ impl ChannelConfig {
         // expand playout folder
         let playout_folder = PathBuf::from(&channel_config.playout.folder);
         let mut expanded_playout_folder =
-            expand_tilde(&playout_folder).ok_or(ChannelError::ChannelConfigPlayoutFolder)?;
+            expand_tilde(&playout_folder).ok_or(ChannelError::ChannelConfigExpandPlayoutFolder)?;
         if expanded_playout_folder.is_relative() {
             let parent = path
                 .parent()
@@ -109,13 +115,20 @@ impl ChannelConfig {
                 )))?;
             expanded_playout_folder = parent.join(&expanded_playout_folder).canonicalize()?;
         }
-
         channel_config.expanded_playout_folder = expanded_playout_folder;
+
+        // expand output folder
+        channel_config.expanded_output_folder =
+            expand_tilde(output_folder).ok_or(ChannelError::ChannelConfigExpandOutputFolder)?;
 
         Ok(channel_config)
     }
 
     pub fn expanded_playout_folder(&self) -> &PathBuf {
         &self.expanded_playout_folder
+    }
+
+    pub fn expanded_output_folder(&self) -> &PathBuf {
+        &self.expanded_output_folder
     }
 }

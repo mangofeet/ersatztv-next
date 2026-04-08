@@ -1,0 +1,229 @@
+use std::path::PathBuf;
+use std::time::Duration;
+
+use ersatztv_core::{READY_FILE_NAME, READY_FILE_TIMEOUT, empty_folder, wait_for_file};
+use ersatztv_playout::playout::PlayoutItemSource;
+use ffpipeline::input::{InputSettings, ProbedInput};
+use ffpipeline::output::OutputSettings;
+use ffpipeline::pipeline::{AudioFormat, HardwareAccel, Kbps, VideoFormat};
+use ffpipeline::{pipeline, probe};
+use simple_expand_tilde::expand_tilde;
+use time::OffsetDateTime;
+
+use crate::config::ChannelConfig;
+use crate::error::ChannelError;
+use crate::playout_loader::PlayoutLoader;
+
+pub struct ChannelSession {
+    channel_config: ChannelConfig,
+    playout_loader: PlayoutLoader,
+
+    transcoded_until: OffsetDateTime,
+    output_folder: PathBuf,
+    ready_file: PathBuf,
+    output_file: String,
+}
+
+impl ChannelSession {
+    pub fn new(
+        channel_config: ChannelConfig,
+        playout_loader: PlayoutLoader,
+    ) -> Result<ChannelSession, ChannelError> {
+        let now = OffsetDateTime::now_local()?;
+
+        let output_folder = channel_config.expanded_output_folder().to_owned();
+        let output_file = output_folder
+            .join("live.m3u8")
+            .into_os_string()
+            .into_string()
+            .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
+
+        let ready_file = output_folder.join(READY_FILE_NAME);
+
+        Ok(ChannelSession {
+            channel_config,
+            playout_loader,
+            transcoded_until: now,
+            output_folder,
+            ready_file,
+            output_file,
+        })
+    }
+
+    pub async fn run(&self) -> Result<(), ChannelError> {
+        self.prep_output_folder().await?;
+        self.transcode().await?;
+        Ok(())
+    }
+
+    async fn prep_output_folder(&self) -> Result<(), ChannelError> {
+        let output_folder = self.channel_config.expanded_output_folder();
+
+        if self.ready_file.exists() {
+            tokio::fs::remove_file(&self.ready_file).await?;
+        }
+
+        if output_folder.exists() {
+            empty_folder(output_folder)
+                .await
+                .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
+        } else {
+            tokio::fs::create_dir(output_folder)
+                .await
+                .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
+        }
+
+        Ok(())
+    }
+
+    async fn transcode(&self) -> Result<(), ChannelError> {
+        // TODO: get last pts offset
+        // TODO: work ahead vs realtime
+
+        // TODO: transcode error message instead of bailing
+        let current_item = self
+            .playout_loader
+            .get_current_item(&self.transcoded_until)
+            .await?;
+        //let finish = current_item.start + Duration::from_millis(current_item.duration_ms);
+
+        let current_source = current_item
+            .source
+            .clone()
+            .ok_or(ChannelError::PlayoutJsonSingleSourceRequired)?;
+
+        let probe_result = match current_source {
+            PlayoutItemSource::Local { path } => {
+                let expanded_path_buf =
+                    expand_tilde(&path).ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
+                let expanded_path = expanded_path_buf
+                    .as_os_str()
+                    .to_str()
+                    .ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
+
+                // probe current item
+                Ok(probe::probe(expanded_path)?)
+            }
+            _ => Err(ChannelError::PlayoutJsonLocalSourceRequired),
+        }?;
+
+        log::debug!("probe result: {probe_result}");
+
+        // generate pipeline
+        let output_settings = OutputSettings {
+            audio_format: self
+                .channel_config
+                .normalization
+                .audio
+                .format
+                .clone()
+                .map(AudioFormat::from),
+            audio_bitrate: self
+                .channel_config
+                .normalization
+                .audio
+                .bitrate_kbps
+                .map(Kbps),
+            audio_buffer: self
+                .channel_config
+                .normalization
+                .audio
+                .buffer_kbps
+                .map(Kbps),
+            video_format: self
+                .channel_config
+                .normalization
+                .video
+                .format
+                .clone()
+                .map(VideoFormat::from),
+            video_bitrate: self
+                .channel_config
+                .normalization
+                .video
+                .bitrate_kbps
+                .map(Kbps),
+            video_buffer: self
+                .channel_config
+                .normalization
+                .video
+                .buffer_kbps
+                .map(Kbps),
+            accel: self
+                .channel_config
+                .normalization
+                .video
+                .accel
+                .clone()
+                .map(HardwareAccel::from),
+            format: pipeline::OutputFormat::Hls(self.output_file.clone()),
+        };
+        let in_point = Duration::from_millis(
+            (self.transcoded_until - current_item.start).whole_milliseconds() as u64,
+        );
+        let out_point = in_point + Duration::from_millis(current_item.duration_ms);
+
+        let input_settings = InputSettings {
+            input: ProbedInput {
+                in_point,
+                out_point,
+                probe_result,
+            },
+        };
+
+        let pipeline_result = pipeline::generate_pipeline(input_settings, output_settings)?;
+        log::debug!("pipeline result: {pipeline_result}");
+
+        // stream current item
+        let mut ffmpeg_child = tokio::process::Command::new("ffmpeg")
+            .args(pipeline_result.args())
+            .spawn()
+            .map_err(|_| ChannelError::StreamFailure(String::from("failed to spawn ffmpeg")))?;
+
+        let (ready, ffmpeg_already_exited) = tokio::select! {
+            status = ffmpeg_child.wait() => {
+                let status = status.map_err(|_| ChannelError::StreamFailure(String::from("ffmpeg exit code")))?;
+                if !status.success() {
+                    return Err(ChannelError::StreamFailure(String::from("ffmpeg exit code")));
+                }
+
+                (true, true)
+            }
+
+            // wait for segment #4 to exist
+            result = async {
+                let target_file = self.output_folder.join("live3.ts");
+                return wait_for_file(&target_file, READY_FILE_TIMEOUT).await;
+            } => {
+                (result, false)
+            }
+        };
+
+        if ready {
+            tokio::fs::write(&self.ready_file, b"").await?;
+
+            if !ffmpeg_already_exited {
+                log::debug!("waiting for ffmpeg to terminate...");
+                let status = ffmpeg_child
+                    .wait()
+                    .await
+                    .map_err(|e| ChannelError::StreamFailure(e.to_string()))?;
+                log::debug!("ffmpeg exited with status: {status}");
+                if !status.success() {
+                    return Err(ChannelError::StreamFailure(format!(
+                        "ffmoeg exited: {status}"
+                    )));
+                }
+            }
+
+            Ok(())
+        } else {
+            ffmpeg_child.kill().await.ok();
+            Err(ChannelError::StreamFailure(String::from(
+                "not ready in time",
+            )))
+        }
+    }
+
+    // TODO: trim and delete
+}

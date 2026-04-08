@@ -32,7 +32,13 @@ impl PlayoutLoader {
         // find first playout JSON in folder
         let mut entries = tokio::fs::read_dir(self.channel_config.expanded_playout_folder())
             .await
-            .map_err(|e| ChannelError::ChannelConfigFailure(e.to_string()))?;
+            .map_err(|e| {
+                ChannelError::ChannelConfigFailure(format!(
+                    "{}: {:?}",
+                    e,
+                    self.channel_config.expanded_playout_folder()
+                ))
+            })?;
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path =
                 entry.path().into_os_string().into_string().map_err(|_| {

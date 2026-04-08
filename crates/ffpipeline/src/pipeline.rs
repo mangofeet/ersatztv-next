@@ -58,6 +58,7 @@ pub enum GlobalOption {
     HideBanner,
     LogLevel(LogLevel),
     HardwareAccel(Option<HardwareAccel>),
+    StandardFormatFlags,
 }
 
 impl GlobalOption {
@@ -71,6 +72,10 @@ impl GlobalOption {
                 vec![String::from("-hwaccel"), hardware_accel.as_arg()]
             }
             GlobalOption::HardwareAccel(None) => Vec::new(),
+            GlobalOption::StandardFormatFlags => vec![
+                String::from("-fflags"),
+                String::from("+genpts+discardcorrupt+igndts"),
+            ],
         }
     }
 }
@@ -221,6 +226,8 @@ pub enum OutputOption {
     AudioBuffer(Option<Kbps>),
     Duration(Duration),
     TsOffset(Option<PtsOffset>),
+    NoDemuxDecodeDelay,
+    MovFlagsFastStart,
 }
 
 impl OutputOption {
@@ -265,6 +272,13 @@ impl OutputOption {
                 ]
             }
             OutputOption::TsOffset(_) => Vec::new(),
+            OutputOption::NoDemuxDecodeDelay => vec!["-muxdelay", "0", "-muxpreload", "0"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            OutputOption::MovFlagsFastStart => {
+                vec![String::from("-movflags"), String::from("+faststart")]
+            }
         }
     }
 }
@@ -336,6 +350,7 @@ impl Pipeline {
                 GlobalOption::NoStdIn,
                 GlobalOption::HideBanner,
                 GlobalOption::LogLevel(LogLevel::Error),
+                GlobalOption::StandardFormatFlags,
                 GlobalOption::HardwareAccel(output_settings.accel),
             ],
             inputs: vec![PipelineInput::Video {
@@ -343,6 +358,8 @@ impl Pipeline {
                 seek: input_settings.input.in_point,
             }],
             output_options: vec![
+                OutputOption::NoDemuxDecodeDelay,
+                OutputOption::MovFlagsFastStart,
                 OutputOption::AudioCodec(audio_codec),
                 OutputOption::AudioBitrate(output_settings.audio_bitrate),
                 OutputOption::AudioBuffer(output_settings.audio_buffer),

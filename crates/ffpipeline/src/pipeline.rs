@@ -2,11 +2,13 @@ use std::fmt::Formatter;
 use std::time::Duration;
 
 use crate::error::FFPipelineError;
+use crate::frame_rate::FrameRate;
 use crate::input::InputSettings;
 use crate::output::OutputSettings;
+use crate::probe::ProbeResultStream;
 
-const KEYFRAME_INTERVAL_SECONDS: u8 = 2;
-const SEGMENT_SECONDS: u8 = 4;
+const KEYFRAME_INTERVAL_SECONDS: u32 = 2;
+const SEGMENT_SECONDS: u32 = 4;
 
 #[derive(Debug, Clone, Copy)]
 pub enum AudioFormat {
@@ -90,6 +92,15 @@ impl OutputFormat {
     fn as_arg(&self, output_context: &OutputContext) -> Vec<String> {
         let force_key_frames_expr = format!("expr:gte(t,n_forced*{KEYFRAME_INTERVAL_SECONDS})");
         let segment_seconds = format!("{SEGMENT_SECONDS}");
+        let rounded_frame_rate = output_context
+            .media_frame_rate
+            .parsed_frame_rate
+            .round_ties_even() as u32;
+
+        // TODO: 1-second GOP for qsv
+        let gop = format!("{}", rounded_frame_rate * KEYFRAME_INTERVAL_SECONDS);
+        let keyint_min = format!("{}", rounded_frame_rate * KEYFRAME_INTERVAL_SECONDS);
+
         let mut args: Vec<&str> = Vec::new();
 
         match self {
@@ -100,7 +111,10 @@ impl OutputFormat {
                     VideoCodec::Copy => {}
                     _ => {
                         args.extend(vec![
-                            // TODO: get frame rate to determine GOP/keyint
+                            "-g",
+                            &gop,
+                            "-keyint_min",
+                            &keyint_min,
                             "-force_key_frames",
                             &force_key_frames_expr,
                         ]);
@@ -190,6 +204,7 @@ impl VideoCodec {
 }
 
 struct OutputContext {
+    media_frame_rate: FrameRate,
     video_codec: VideoCodec,
     pts_offset: Option<PtsOffset>,
 }
@@ -265,6 +280,8 @@ pub struct Pipeline {
     inputs: Vec<PipelineInput>,
     output_options: Vec<OutputOption>,
     output: PipelineOutput,
+
+    output_context: OutputContext,
 }
 
 impl Pipeline {
@@ -293,6 +310,23 @@ impl Pipeline {
 
         let output_path = output_settings.format.path();
 
+        let media_frame_rate = input_settings
+            .input
+            .probe_result
+            .streams
+            .iter()
+            .find_map(|s| match s {
+                ProbeResultStream::Video(video_stream) => Some(video_stream.frame_rate.to_owned()),
+                _ => None,
+            })
+            .unwrap_or(FrameRate::parse("24"));
+
+        let output_context = OutputContext {
+            video_codec,
+            pts_offset: output_settings.pts_offset,
+            media_frame_rate,
+        };
+
         Pipeline {
             global_options: vec![
                 GlobalOption::Threads(0),
@@ -317,6 +351,7 @@ impl Pipeline {
                 OutputOption::TsOffset(output_settings.pts_offset),
             ],
             output: PipelineOutput { path: output_path },
+            output_context,
         }
     }
 
@@ -338,42 +373,16 @@ impl Pipeline {
         }
 
         // TODO: filter_complex
-        let output_context = self.get_output_context();
 
         result.extend(
             self.output_options
                 .iter()
-                .flat_map(|o| o.as_arg(&output_context)),
+                .flat_map(|o| o.as_arg(&self.output_context)),
         );
 
         result.extend([self.output.path.to_owned()]);
 
         result
-    }
-
-    fn get_output_context(&self) -> OutputContext {
-        let video_codec = self
-            .output_options
-            .iter()
-            .find_map(|o| match o {
-                OutputOption::VideoCodec(c) => Some(*c),
-                _ => None,
-            })
-            .unwrap_or(VideoCodec::Copy);
-
-        let pts_offset = self
-            .output_options
-            .iter()
-            .find_map(|o| match o {
-                OutputOption::TsOffset(p) => Some(*p),
-                _ => None,
-            })
-            .unwrap_or(None);
-
-        OutputContext {
-            video_codec,
-            pts_offset,
-        }
     }
 }
 

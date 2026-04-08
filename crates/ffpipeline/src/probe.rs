@@ -5,6 +5,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use crate::error::FFPipelineError;
+use crate::frame_rate::FrameRate;
 
 #[derive(Debug)]
 pub struct ProbeResultVideoStream {
@@ -12,6 +13,7 @@ pub struct ProbeResultVideoStream {
     pub codec: String,
     pub height: u32,
     pub width: u32,
+    pub frame_rate: FrameRate,
 }
 
 #[derive(Debug)]
@@ -40,8 +42,8 @@ impl std::fmt::Display for ProbeResultStream {
             ProbeResultStream::Video(v) => {
                 write!(
                     f,
-                    "{}: video ({} - {}x{})",
-                    v.stream_index, v.codec, v.width, v.height
+                    "{}: video ({} - {}x{} - {:?})",
+                    v.stream_index, v.codec, v.width, v.height, v.frame_rate
                 )
             }
         }
@@ -82,6 +84,7 @@ struct ProbeOutputStream {
     height: Option<u32>,
     width: Option<u32>,
     channels: Option<u32>,
+    r_frame_rate: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -163,6 +166,7 @@ fn output_to_result(output_stream: &ProbeOutputStream) -> Option<ProbeResultStre
                 .unwrap_or(String::from("unknown")),
             height: output_stream.height?,
             width: output_stream.width?,
+            frame_rate: FrameRate::parse(&output_stream.r_frame_rate.clone()?),
         })),
         _ => None,
     }

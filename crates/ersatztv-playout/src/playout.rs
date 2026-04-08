@@ -27,6 +27,8 @@ pub struct PlayoutItem {
     pub start: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     pub finish: OffsetDateTime,
+    pub in_point_ms: Option<u64>,
+    pub out_point_ms: Option<u64>,
     pub source: Option<PlayoutItemSource>,
     pub tracks: Option<PlayoutItemTracks>,
 }
@@ -36,12 +38,16 @@ impl PlayoutItem {
         id: String,
         start: OffsetDateTime,
         finish: OffsetDateTime,
+        in_point: Option<std::time::Duration>,
+        out_point: Option<std::time::Duration>,
         path: &Path,
     ) -> Result<PlayoutItem, PlayoutError> {
         Ok(PlayoutItem {
             id,
             start,
             finish,
+            in_point_ms: in_point.map(|d| d.as_millis() as u64),
+            out_point_ms: out_point.map(|d| d.as_millis() as u64),
             source: Some(PlayoutItemSource::Local {
                 path: path.to_string_lossy().to_string(),
             }),

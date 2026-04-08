@@ -207,23 +207,23 @@ impl ChannelSession {
             }),
         };
 
-        // TODO: in and out points from playout item
+        // in and out points from playout item
+        let in_point_base_ms = current_item.in_point_ms.unwrap_or(0);
+        let item_duration_ms =
+            (current_item.finish - current_item.start).whole_milliseconds() as u64;
         let in_point = if self.transcoded_until > current_item.start {
             Duration::from_millis(
-                (self.transcoded_until - current_item.start).whole_milliseconds() as u64,
+                in_point_base_ms
+                    + (self.transcoded_until - current_item.start).whole_milliseconds() as u64,
             )
         } else {
-            Duration::ZERO
+            Duration::from_millis(in_point_base_ms)
         };
-        let out_point = if self.transcoded_until > current_item.start {
-            Duration::from_millis(
-                (current_item.finish - self.transcoded_until).whole_milliseconds() as u64,
-            )
-        } else {
-            Duration::from_millis(
-                (current_item.finish - current_item.start).whole_milliseconds() as u64,
-            )
-        };
+        let out_point = Duration::from_millis(
+            current_item
+                .out_point_ms
+                .unwrap_or(in_point_base_ms + item_duration_ms),
+        );
 
         let input_settings = InputSettings {
             input: ProbedInput {

@@ -76,6 +76,8 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
                 uuid::Uuid::new_v4().to_string(),
                 current_time,
                 current_time + scheduled_duration,
+                None,
+                None,
                 path,
             )
         {

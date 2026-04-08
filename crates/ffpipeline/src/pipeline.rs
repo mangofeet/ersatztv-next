@@ -247,10 +247,14 @@ impl OutputOption {
                 vec![String::from("-t"), format!("{}ms", duration.as_millis())]
             }
             OutputOption::TsOffset(Some(pts_offset)) => {
-                vec![
-                    String::from("-output_ts_offset"),
-                    format!("{}ms", pts_offset.duration.as_millis()),
-                ]
+                if pts_offset.duration > Duration::ZERO {
+                    vec![
+                        String::from("-output_ts_offset"),
+                        format!("{}ms", pts_offset.duration.as_millis()),
+                    ]
+                } else {
+                    Vec::new()
+                }
             }
             OutputOption::TsOffset(_) => Vec::new(),
         }

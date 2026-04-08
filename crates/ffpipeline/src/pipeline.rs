@@ -81,51 +81,33 @@ pub enum OutputFormat {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct PtsOffset {
     pub duration: Duration,
 }
 
 impl OutputFormat {
-    fn as_arg(&self, video_codec: &VideoCodec) -> Vec<String> {
+    fn as_arg(&self, output_context: &OutputContext) -> Vec<String> {
+        let force_key_frames_expr = format!("expr:gte(t,n_forced*{KEYFRAME_INTERVAL_SECONDS})");
         let segment_seconds = format!("{SEGMENT_SECONDS}");
+        let mut args: Vec<&str> = Vec::new();
 
-        match (self, video_codec) {
-            (
-                OutputFormat::Hls {
-                    segment_template, ..
-                },
-                VideoCodec::Copy,
-            ) => [
-                "-f",
-                "hls",
-                "-hls_time",
-                &segment_seconds,
-                "-hls_list_size",
-                "0",
-                "-segment_list_flags",
-                "+live",
-                "-hls_segment_filename",
-                segment_template,
-                "-hls_segment_type",
-                "mpegts",
-                "-hls_flags",
-                "program_date_time+omit_endlist+append_list",
-            ]
-            .map(String::from)
-            .to_vec(),
-            (
-                OutputFormat::Hls {
-                    segment_template, ..
-                },
-                _,
-            ) => {
-                let force_key_frames_expr =
-                    format!("expr:gte(t,n_forced*{KEYFRAME_INTERVAL_SECONDS})");
-                [
-                    // TODO: get frame rate to determine GOP/keyint
-                    "-force_key_frames",
-                    &force_key_frames_expr,
+        match self {
+            OutputFormat::Hls {
+                segment_template, ..
+            } => {
+                match output_context.video_codec {
+                    VideoCodec::Copy => {}
+                    _ => {
+                        args.extend(vec![
+                            // TODO: get frame rate to determine GOP/keyint
+                            "-force_key_frames",
+                            &force_key_frames_expr,
+                        ]);
+                    }
+                }
+
+                args.extend(vec![
                     "-f",
                     "hls",
                     "-hls_time",
@@ -140,11 +122,19 @@ impl OutputFormat {
                     "mpegts",
                     "-hls_flags",
                     "program_date_time+omit_endlist+append_list",
-                ]
-                .map(String::from)
-                .to_vec()
+                ]);
+
+                match output_context.pts_offset {
+                    Some(pts_offset) if pts_offset.duration > Duration::ZERO => {}
+                    _ => args.extend(vec![
+                        "-hls_segment_options",
+                        "mpegts_flags=+initial_discontinuity",
+                    ]),
+                }
             }
         }
+
+        args.into_iter().map(String::from).collect()
     }
 
     fn path(&self) -> String {
@@ -199,6 +189,11 @@ impl VideoCodec {
     }
 }
 
+struct OutputContext {
+    video_codec: VideoCodec,
+    pts_offset: Option<PtsOffset>,
+}
+
 pub enum OutputOption {
     Format(OutputFormat),
     VideoCodec(VideoCodec),
@@ -212,9 +207,9 @@ pub enum OutputOption {
 }
 
 impl OutputOption {
-    fn as_arg(&self, video_codec: &VideoCodec) -> Vec<String> {
+    fn as_arg(&self, output_context: &OutputContext) -> Vec<String> {
         match self {
-            OutputOption::Format(format) => format.as_arg(video_codec),
+            OutputOption::Format(format) => format.as_arg(output_context),
             OutputOption::VideoCodec(codec) => codec.as_arg(),
             OutputOption::VideoBitrate(Some(bitrate_kbps)) => {
                 vec![
@@ -246,15 +241,11 @@ impl OutputOption {
             OutputOption::Duration(duration) => {
                 vec![String::from("-t"), format!("{}ms", duration.as_millis())]
             }
-            OutputOption::TsOffset(Some(pts_offset)) => {
-                if pts_offset.duration > Duration::ZERO {
-                    vec![
-                        String::from("-output_ts_offset"),
-                        format!("{}ms", pts_offset.duration.as_millis()),
-                    ]
-                } else {
-                    Vec::new()
-                }
+            OutputOption::TsOffset(Some(pts_offset)) if pts_offset.duration > Duration::ZERO => {
+                vec![
+                    String::from("-output_ts_offset"),
+                    format!("{}ms", pts_offset.duration.as_millis()),
+                ]
             }
             OutputOption::TsOffset(_) => Vec::new(),
         }
@@ -274,8 +265,6 @@ pub struct Pipeline {
     inputs: Vec<PipelineInput>,
     output_options: Vec<OutputOption>,
     output: PipelineOutput,
-
-    video_codec: VideoCodec,
 }
 
 impl Pipeline {
@@ -328,8 +317,6 @@ impl Pipeline {
                 OutputOption::TsOffset(output_settings.pts_offset),
             ],
             output: PipelineOutput { path: output_path },
-
-            video_codec,
         }
     }
 
@@ -351,16 +338,42 @@ impl Pipeline {
         }
 
         // TODO: filter_complex
+        let output_context = self.get_output_context();
 
         result.extend(
             self.output_options
                 .iter()
-                .flat_map(|o| o.as_arg(&self.video_codec)),
+                .flat_map(|o| o.as_arg(&output_context)),
         );
 
         result.extend([self.output.path.to_owned()]);
 
         result
+    }
+
+    fn get_output_context(&self) -> OutputContext {
+        let video_codec = self
+            .output_options
+            .iter()
+            .find_map(|o| match o {
+                OutputOption::VideoCodec(c) => Some(*c),
+                _ => None,
+            })
+            .unwrap_or(VideoCodec::Copy);
+
+        let pts_offset = self
+            .output_options
+            .iter()
+            .find_map(|o| match o {
+                OutputOption::TsOffset(p) => Some(*p),
+                _ => None,
+            })
+            .unwrap_or(None);
+
+        OutputContext {
+            video_codec,
+            pts_offset,
+        }
     }
 }
 

@@ -109,6 +109,10 @@ fn is_video_extension(dir_entry: &DirEntry) -> bool {
 fn to_probe_result(dir_entry: DirEntry) -> Option<PathAndProbe> {
     if let Some(video_path) = dir_entry.path().to_str()
         && let Ok(probe_result) = ffpipeline::probe::probe(video_path)
+        && probe_result
+            .duration
+            .filter(|d| d.as_secs() < 120)
+            .is_some()
     {
         return Some(PathAndProbe {
             path: dir_entry.path().to_path_buf(),

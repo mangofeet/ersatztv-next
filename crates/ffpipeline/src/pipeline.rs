@@ -81,6 +81,11 @@ pub enum OutputFormat {
     },
 }
 
+#[derive(Debug)]
+pub struct PtsOffset {
+    pub duration: Duration,
+}
+
 impl OutputFormat {
     fn as_arg(&self, video_codec: &VideoCodec) -> Vec<String> {
         let segment_seconds = format!("{SEGMENT_SECONDS}");
@@ -203,6 +208,7 @@ pub enum OutputOption {
     AudioBitrate(Option<Kbps>),
     AudioBuffer(Option<Kbps>),
     Duration(Duration),
+    TsOffset(Option<PtsOffset>),
 }
 
 impl OutputOption {
@@ -238,8 +244,15 @@ impl OutputOption {
             }
             OutputOption::AudioBuffer(None) => Vec::new(),
             OutputOption::Duration(duration) => {
-                vec![String::from("-t"), format!("{}s", duration.as_secs_f64())]
+                vec![String::from("-t"), format!("{}ms", duration.as_millis())]
             }
+            OutputOption::TsOffset(Some(pts_offset)) => {
+                vec![
+                    String::from("-output_ts_offset"),
+                    format!("{}ms", pts_offset.duration.as_millis()),
+                ]
+            }
+            OutputOption::TsOffset(_) => Vec::new(),
         }
     }
 }
@@ -308,6 +321,7 @@ impl Pipeline {
                 OutputOption::VideoBuffer(output_settings.video_buffer),
                 OutputOption::Format(output_settings.format),
                 OutputOption::Duration(duration),
+                OutputOption::TsOffset(output_settings.pts_offset),
             ],
             output: PipelineOutput { path: output_path },
 

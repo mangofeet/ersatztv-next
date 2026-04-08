@@ -2,6 +2,7 @@ mod channel_session;
 mod config;
 mod error;
 mod playout_loader;
+mod pts_scanner;
 
 use clap::Parser;
 use ersatztv_core::{READY_FILE_TIMEOUT, wait_for_file};
@@ -12,6 +13,7 @@ use crate::channel_session::ChannelSession;
 use crate::config::ChannelConfig;
 use crate::error::ChannelError;
 use crate::playout_loader::PlayoutLoader;
+use crate::pts_scanner::PtsScanner;
 
 const PLAYLIST_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -39,9 +41,10 @@ async fn run() -> Result<(), ChannelError> {
     // load channel config
     let channel_config = ChannelConfig::from_file(&args.config_path, &args.output_folder).await?;
     let playout_loader = PlayoutLoader::new(&channel_config);
+    let pts_scanner = PtsScanner::new(&channel_config);
 
     // start channel session
-    let mut channel_session = ChannelSession::new(channel_config, playout_loader)?;
+    let mut channel_session = ChannelSession::new(channel_config, playout_loader, pts_scanner)?;
 
     let output_file = channel_session.output_file().to_owned();
     let output_folder = channel_session.output_folder().to_owned();

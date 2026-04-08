@@ -42,4 +42,7 @@ pub enum ChannelError {
 
     #[error("stream failed: {0}")]
     StreamFailure(String),
+
+    #[error("failed to scan for last pts")]
+    PtsScannerFailure,
 }

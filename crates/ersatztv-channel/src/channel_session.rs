@@ -5,7 +5,7 @@ use ersatztv_core::{READY_FILE_NAME, empty_folder};
 use ersatztv_playout::playout::PlayoutItemSource;
 use ffpipeline::input::{InputSettings, ProbedInput};
 use ffpipeline::output::OutputSettings;
-use ffpipeline::pipeline::{AudioFormat, HardwareAccel, Kbps, VideoFormat};
+use ffpipeline::pipeline::{AudioFormat, HardwareAccel, Kbps, PtsOffset, VideoFormat};
 use ffpipeline::{pipeline, probe};
 use simple_expand_tilde::expand_tilde;
 use time::OffsetDateTime;
@@ -13,10 +13,12 @@ use time::OffsetDateTime;
 use crate::config::ChannelConfig;
 use crate::error::ChannelError;
 use crate::playout_loader::PlayoutLoader;
+use crate::pts_scanner::{PtsScanner, PtsTime};
 
 pub struct ChannelSession {
     channel_config: ChannelConfig,
     playout_loader: PlayoutLoader,
+    pts_scanner: PtsScanner,
 
     transcoded_until: OffsetDateTime,
     output_folder: PathBuf,
@@ -30,6 +32,7 @@ impl ChannelSession {
     pub fn new(
         channel_config: ChannelConfig,
         playout_loader: PlayoutLoader,
+        pts_scanner: PtsScanner,
     ) -> Result<ChannelSession, ChannelError> {
         let now = OffsetDateTime::now_local()?;
 
@@ -51,6 +54,7 @@ impl ChannelSession {
         Ok(ChannelSession {
             channel_config,
             playout_loader,
+            pts_scanner,
             transcoded_until: now,
             output_folder,
             ready_file,
@@ -110,7 +114,13 @@ impl ChannelSession {
     }
 
     async fn transcode(&mut self) -> Result<(), ChannelError> {
-        // TODO: get last pts offset
+        // get last pts offset
+        let mut pts_time: Option<PtsTime> = None;
+        match self.pts_scanner.get_last_pts().await {
+            Ok(scanned_pts_time) => pts_time = Some(scanned_pts_time),
+            Err(e) => log::debug!("failed to scan pts time: {e}"),
+        }
+
         // TODO: work ahead vs realtime
 
         // TODO: transcode error message instead of bailing
@@ -192,6 +202,9 @@ impl ChannelSession {
                 playlist: self.output_file.clone(),
                 segment_template: self.output_segment_template.clone(),
             },
+            pts_offset: pts_time.map(|p| PtsOffset {
+                duration: p.duration,
+            }),
         };
 
         // TODO: in and out points from playout item

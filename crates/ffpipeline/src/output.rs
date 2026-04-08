@@ -1,4 +1,4 @@
-use crate::pipeline::{AudioFormat, HardwareAccel, Kbps, OutputFormat, VideoFormat};
+use crate::pipeline::{AudioFormat, HardwareAccel, Kbps, OutputFormat, PtsOffset, VideoFormat};
 
 #[derive(Debug)]
 pub struct OutputSettings {
@@ -10,4 +10,5 @@ pub struct OutputSettings {
     pub video_buffer: Option<Kbps>,
     pub accel: Option<HardwareAccel>,
     pub format: OutputFormat,
+    pub pts_offset: Option<PtsOffset>,
 }

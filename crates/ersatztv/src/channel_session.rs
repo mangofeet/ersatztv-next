@@ -1,21 +1,24 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use ersatztv_core::{READY_FILE_NAME, READY_FILE_TIMEOUT, wait_for_file};
-use tokio::process::Child;
-use tokio::sync::watch;
+use tokio::sync::{Mutex, watch};
 
 use crate::channel_model::ChannelModel;
 use crate::error::LineupError;
 
 pub struct ChannelSession {
     _output_folder: PathBuf,
-    _child: Child,
     ready_receiver: watch::Receiver<bool>,
 }
 
 impl ChannelSession {
-    pub fn spawn(channel: &ChannelModel) -> Result<Self, LineupError> {
-        let child = tokio::process::Command::new(channel_binary_path()?)
+    pub fn spawn(
+        channel: &ChannelModel,
+        active: Arc<Mutex<HashMap<String, ChannelSession>>>,
+    ) -> Result<Self, LineupError> {
+        let mut child = tokio::process::Command::new(channel_binary_path()?)
             .arg("--output-folder")
             .arg(channel.output_folder())
             .arg(channel.config_path())
@@ -23,17 +26,29 @@ impl ChannelSession {
             .map_err(LineupError::Io)?;
 
         let (ready_sender, ready_receiver) = watch::channel(false);
-        let ready_file = channel.output_folder().join(READY_FILE_NAME);
 
+        let ready_file = channel.output_folder().join(READY_FILE_NAME);
         tokio::spawn(async move {
             if wait_for_file(&ready_file, READY_FILE_TIMEOUT).await {
                 let _ = ready_sender.send(true);
             }
         });
 
+        let channel_number = channel.number().to_owned();
+
+        let ready_file = channel.output_folder().join(READY_FILE_NAME);
+        tokio::spawn(async move {
+            let _ = child.wait().await;
+            log::debug!("channel {} exited", &channel_number);
+            active.lock().await.remove(&channel_number);
+
+            if ready_file.exists() {
+                let _ = tokio::fs::remove_file(&ready_file).await;
+            }
+        });
+
         Ok(ChannelSession {
             _output_folder: channel.output_folder().to_owned(),
-            _child: child,
             ready_receiver,
         })
     }

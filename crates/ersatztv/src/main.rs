@@ -83,7 +83,7 @@ async fn run() -> Result<(), LineupError> {
 
     let state = LineupState {
         channels,
-        active: Mutex::new(HashMap::new()),
+        active: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let addr = format!(
@@ -132,7 +132,7 @@ async fn stream(
         if let Some(channel_session) = active.get(number) {
             channel_session.subscribe_ready()
         } else {
-            let channel_session = ChannelSession::spawn(channel)?;
+            let channel_session = ChannelSession::spawn(channel, Arc::clone(&state.active))?;
             let ready_receiver = channel_session.subscribe_ready();
             active.insert(number.to_owned(), channel_session);
             ready_receiver
@@ -157,7 +157,7 @@ async fn stream(
 
 struct LineupState {
     channels: Vec<ChannelModel>,
-    active: Mutex<HashMap<String, ChannelSession>>,
+    active: Arc<Mutex<HashMap<String, ChannelSession>>>,
 }
 
 async fn fix_content_types(

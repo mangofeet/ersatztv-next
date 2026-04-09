@@ -13,6 +13,7 @@ use clap::Parser;
 use ersatztv_core::empty_folder;
 use tokio::signal;
 use tokio::sync::Mutex;
+use tower_http::cors::CorsLayer;
 
 use crate::channel_model::ChannelModel;
 use crate::channel_session::ChannelSession;
@@ -99,6 +100,7 @@ async fn run() -> Result<(), LineupError> {
             tower_http::services::ServeDir::new(&lineup_config.output.folder),
         )
         .layer(axum::middleware::from_fn(fix_content_types))
+        .layer(CorsLayer::permissive())
         .with_state(Arc::new(state));
 
     axum::serve(listener, app)
@@ -183,7 +185,7 @@ fn get_multi_variant(channel: &ChannelModel) -> String {
     format!(
         "#EXTM3U
 #EXT-X-VERSION:3
-#EXT-X-STREAM-INF
+#EXT-X-STREAM-INF:BANDWIDTH=5000000
 /session/{}/live.m3u8",
         channel.number()
     )

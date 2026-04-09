@@ -3,13 +3,13 @@ folder = "~/Playouts"
 
 [normalization.audio]
 # audio will be stream copied when format is not set
-#format = "aac"
+format = "aac"
 bitrate_kbps = 192
 buffer_kbps = 384
 
 [normalization.video]
 # video will be stream copied when format is not set
-#format = "hevc"
+format = "hevc"
 bitrate_kbps = 2_000
 buffer_kbps = 4_000
 accel = "cuda"

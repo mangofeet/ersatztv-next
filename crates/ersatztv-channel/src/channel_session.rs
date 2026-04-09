@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use ersatztv_core::{READY_FILE_NAME, empty_folder};
@@ -9,9 +10,11 @@ use ffpipeline::pipeline::{AudioFormat, HardwareAccel, Kbps, PtsOffset, VideoFor
 use ffpipeline::{pipeline, probe};
 use simple_expand_tilde::expand_tilde;
 use time::OffsetDateTime;
+use tokio::sync::Mutex;
 
 use crate::config::ChannelConfig;
 use crate::error::ChannelError;
+use crate::playlist_manager::PlaylistManager;
 use crate::playout_loader::PlayoutLoader;
 use crate::pts_scanner::{PtsScanner, PtsTime};
 
@@ -19,6 +22,7 @@ pub struct ChannelSession {
     channel_config: ChannelConfig,
     playout_loader: PlayoutLoader,
     pts_scanner: PtsScanner,
+    playlist_manager: Arc<Mutex<PlaylistManager>>,
 
     transcoded_until: OffsetDateTime,
     output_folder: PathBuf,
@@ -29,16 +33,18 @@ pub struct ChannelSession {
 }
 
 impl ChannelSession {
-    pub fn new(
-        channel_config: ChannelConfig,
-        playout_loader: PlayoutLoader,
-        pts_scanner: PtsScanner,
-    ) -> Result<ChannelSession, ChannelError> {
+    pub fn new(channel_config: ChannelConfig) -> Result<ChannelSession, ChannelError> {
         let now = OffsetDateTime::now_local()?;
 
         let output_folder = channel_config.expanded_output_folder().to_owned();
-        let output_file = output_folder
+        let generated_output_file = output_folder
             .join("live.m3u8")
+            .into_os_string()
+            .into_string()
+            .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
+
+        let ffmpeg_output_file = output_folder
+            .join("ffmpeg.m3u8")
             .into_os_string()
             .into_string()
             .map_err(|_| ChannelError::ChannelConfigOutputFolderRequired)?;
@@ -51,14 +57,27 @@ impl ChannelSession {
 
         let ready_file = output_folder.join(READY_FILE_NAME);
 
+        let playout_loader = PlayoutLoader::new(&channel_config);
+        let pts_scanner = PtsScanner::new(&channel_config);
+        let playlist_manager = PlaylistManager::new(
+            now,
+            pipeline::SEGMENT_SECONDS,
+            output_folder.to_owned(),
+            generated_output_file,
+            ffmpeg_output_file.to_owned(),
+        );
+
+        let playlist_manager = Arc::new(Mutex::new(playlist_manager));
+
         Ok(ChannelSession {
             channel_config,
             playout_loader,
             pts_scanner,
+            playlist_manager,
             transcoded_until: now,
             output_folder,
             ready_file,
-            output_file,
+            output_file: ffmpeg_output_file,
             output_segment_template,
         })
     }
@@ -78,13 +97,25 @@ impl ChannelSession {
     pub async fn run(&mut self) -> Result<(), ChannelError> {
         self.prep_output_folder().await?;
 
+        let pm = self.playlist_manager.clone();
+        tokio::spawn(async move {
+            loop {
+                let _ = pm.lock().await.update().await;
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        });
+
         self.transcode().await?;
 
         loop {
             let now = OffsetDateTime::now_local()?;
             let transcoded_buffer =
                 std::cmp::max(time::Duration::new(0, 0), self.transcoded_until - now);
-            log::debug!("transcoded buffer: {}", transcoded_buffer);
+            log::debug!(
+                "transcoded buffer: {}m {}s",
+                transcoded_buffer.whole_minutes(),
+                transcoded_buffer.whole_seconds() % 60
+            );
             if transcoded_buffer <= time::Duration::minutes(1) {
                 self.transcode().await?;
             } else {
@@ -237,6 +268,12 @@ impl ChannelSession {
         pipeline_result.optimize();
         log::debug!("optimized pipeline: {pipeline_result}");
 
+        self.playlist_manager
+            .lock()
+            .await
+            .before_new_pipeline()
+            .await?;
+
         // stream current item
         let mut ffmpeg_child = tokio::process::Command::new("ffmpeg")
             .args(pipeline_result.args())
@@ -261,6 +298,4 @@ impl ChannelSession {
 
         Ok(())
     }
-
-    // TODO: trim and delete
 }

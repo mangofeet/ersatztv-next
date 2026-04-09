@@ -8,7 +8,7 @@ use crate::output::OutputSettings;
 use crate::probe::ProbeResultStream;
 
 const KEYFRAME_INTERVAL_SECONDS: u32 = 2;
-const SEGMENT_SECONDS: u32 = 4;
+pub const SEGMENT_SECONDS: u32 = 4;
 
 #[derive(Debug, Clone, Copy)]
 pub enum AudioFormat {

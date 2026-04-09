@@ -19,6 +19,9 @@ pub enum ChannelError {
     #[error("channel config output folder is required")]
     ChannelConfigOutputFolderRequired,
 
+    #[error("date formatting error: {0}")]
+    ChannelDateFormatError(#[from] time::error::Format),
+
     #[error("Indeterminate local time offset: {0}")]
     DateOffsetError(#[from] time::error::IndeterminateOffset),
 

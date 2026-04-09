@@ -12,6 +12,7 @@ ffpipeline = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 simple-expand-tilde = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }

@@ -13,7 +13,10 @@ use walkdir::WalkDir;
 
 use crate::error::PlayoutGeneratorError;
 
-static VIDEO_EXTENSIONS: &[&str] = &["mkv", "mov", "mp4"];
+static VIDEO_EXTENSIONS: &[&str] = &[
+    "avs", "mpg", "mp2", "mpeg", "mpe", "mpv", "ogg", "ogv", "mp4", "m4p", "m4v", "avi", "wmv",
+    "mov", "mkv", "m2ts", "ts", "webm",
+];
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -48,6 +51,10 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
     {
         log::debug!("path: {path_and_probe:?}");
         video_paths.insert(path_and_probe.path, path_and_probe.probe);
+    }
+
+    if video_paths.is_empty() {
+        return Err(PlayoutGeneratorError::NoSourceContent);
     }
 
     // generate output file name

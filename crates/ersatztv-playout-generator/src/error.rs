@@ -13,4 +13,7 @@ pub enum PlayoutGeneratorError {
 
     #[error("serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
+
+    #[error("no source content was found")]
+    NoSourceContent,
 }

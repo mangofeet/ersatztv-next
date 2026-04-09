@@ -27,9 +27,13 @@ pub struct PlayoutItem {
     pub start: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     pub finish: OffsetDateTime,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub in_point_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub out_point_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<PlayoutItemSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tracks: Option<PlayoutItemTracks>,
 }
 

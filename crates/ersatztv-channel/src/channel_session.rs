@@ -25,7 +25,6 @@ pub struct ChannelSession {
     playlist_manager: Arc<Mutex<PlaylistManager>>,
 
     transcoded_until: OffsetDateTime,
-    output_folder: PathBuf,
     ready_file: PathBuf,
 
     output_file: String,
@@ -63,6 +62,7 @@ impl ChannelSession {
             now,
             pipeline::SEGMENT_SECONDS,
             output_folder.to_owned(),
+            ready_file.to_owned(),
             generated_output_file,
             ffmpeg_output_file.to_owned(),
         );
@@ -75,23 +75,10 @@ impl ChannelSession {
             pts_scanner,
             playlist_manager,
             transcoded_until: now,
-            output_folder,
             ready_file,
             output_file: ffmpeg_output_file,
             output_segment_template,
         })
-    }
-
-    pub fn output_file(&self) -> &str {
-        &self.output_file
-    }
-
-    pub fn output_folder(&self) -> &PathBuf {
-        &self.output_folder
-    }
-
-    pub fn ready_file(&self) -> &PathBuf {
-        &self.ready_file
     }
 
     pub async fn run(&mut self) -> Result<(), ChannelError> {

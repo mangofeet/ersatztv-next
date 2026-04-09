@@ -7,11 +7,15 @@ use time::macros::format_description;
 
 use crate::error::ChannelError;
 
+const MIN_SEGMENTS: usize = 4;
+
 #[derive(Clone)]
 pub struct PlaylistManager {
     output_folder: PathBuf,
+    ready_file: PathBuf,
     generated_playlist_file: String,
     ffmpeg_playlist_file: String,
+    ready: bool,
 
     segments: VecDeque<Segment>,
     discontinuity_before: HashSet<String>,
@@ -35,13 +39,16 @@ impl PlaylistManager {
         channel_start_time: OffsetDateTime,
         target_duration: u32,
         output_folder: PathBuf,
+        ready_file: PathBuf,
         generated_playlist_file: String,
         ffmpeg_playlist_file: String,
     ) -> PlaylistManager {
         PlaylistManager {
             output_folder,
+            ready_file,
             generated_playlist_file,
             ffmpeg_playlist_file,
+            ready: false,
 
             segments: VecDeque::new(),
             discontinuity_before: HashSet::new(),
@@ -139,6 +146,11 @@ impl PlaylistManager {
         let temp = tempfile::NamedTempFile::new()?;
         tokio::fs::write(temp.path(), generated_playlist).await?;
         tokio::fs::rename(temp.path(), &self.generated_playlist_file).await?;
+
+        if !self.ready && self.segments.len() >= MIN_SEGMENTS {
+            tokio::fs::write(&self.ready_file, b"").await?;
+            self.ready = true;
+        }
 
         Ok(())
     }

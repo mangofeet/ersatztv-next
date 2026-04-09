@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::error::FFPipelineError;
 use crate::frame_rate::FrameRate;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProbeResultVideoStream {
     pub stream_index: u32,
     pub codec: String,
@@ -16,14 +16,14 @@ pub struct ProbeResultVideoStream {
     pub frame_rate: FrameRate,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProbeResultAudioStream {
     pub stream_index: u32,
     pub codec: String,
     pub channels: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ProbeResultStream {
     Video(ProbeResultVideoStream),
     Audio(ProbeResultAudioStream),
@@ -50,7 +50,7 @@ impl std::fmt::Display for ProbeResultStream {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProbeResult {
     pub path: String,
     pub streams: Vec<ProbeResultStream>,

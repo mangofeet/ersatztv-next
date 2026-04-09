@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use clap::Parser;
 use ersatztv_playout::playout::{Playout, PlayoutItem};
 use ffpipeline::probe::ProbeResult;
+use rand::RngExt;
+use rand::seq::SliceRandom;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use walkdir::DirEntry;
@@ -62,20 +64,34 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
     let formatted_start = start.format(&Rfc3339)?;
     let finish = start + time::Duration::days(1) - time::Duration::seconds(1);
 
-    let mut playout_items: Vec<PlayoutItem> = Vec::new();
+    let video_list: Vec<(PathBuf, ProbeResult)> = video_paths.into_iter().collect();
 
     // fill output file with content
+    let mut playout_items: Vec<PlayoutItem> = Vec::new();
     let mut current_time = start;
-    let mut last_index = 0;
-    while current_time < finish {
-        let mut index: usize = 0;
-        while video_paths.len() > 1 && index == last_index {
-            index = (rand::random::<u32>() as usize) % video_paths.len();
-        }
-        last_index = index;
+    let mut rng = rand::rng();
+    let mut shuffled = video_list.clone();
+    shuffled.shuffle(&mut rng);
+    let mut cursor = 0;
 
-        if let Some((path, probe_result)) = video_paths.iter().nth(index)
-            && let Some(scheduled_duration) = probe_result.duration
+    while current_time < finish {
+        if cursor >= shuffled.len() {
+            let last = shuffled.last().cloned();
+            shuffled.shuffle(&mut rng);
+            if shuffled.len() > 1
+                && let Some(ref last) = last
+                && shuffled[0].0 == last.0
+            {
+                let swap_index = rng.random_range(1..shuffled.len());
+                shuffled.swap(0, swap_index);
+            }
+            cursor = 0;
+        }
+
+        let (path, probe_result) = &shuffled[cursor];
+        cursor += 1;
+
+        if let Some(scheduled_duration) = probe_result.duration
             && let Ok(playout_item) = PlayoutItem::new(
                 uuid::Uuid::new_v4().to_string(),
                 current_time,

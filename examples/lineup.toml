@@ -7,4 +7,5 @@ folder = "/tmp/hls"
 
 [[channels]]
 number = "1"
+name = "ErsatzTV"
 config = "./channel.toml"

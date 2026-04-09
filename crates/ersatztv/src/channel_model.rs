@@ -5,6 +5,7 @@ use crate::error::LineupError;
 
 pub struct ChannelModel {
     number: String,
+    name: String,
     config_path: PathBuf,
     output_folder: PathBuf,
 }
@@ -29,6 +30,7 @@ impl ChannelModel {
 
         Ok(ChannelModel {
             number: channel.number.clone(),
+            name: channel.name.clone(),
             config_path: channel_config,
             output_folder: output_folder.join(&channel.number),
         })
@@ -36,6 +38,10 @@ impl ChannelModel {
 
     pub fn number(&self) -> &str {
         self.number.as_str()
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
 
     pub fn config_path(&self) -> &Path {

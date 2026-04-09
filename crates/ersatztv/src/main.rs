@@ -95,6 +95,7 @@ async fn run() -> Result<(), LineupError> {
 
     let app = Router::new()
         .route("/channel/{filename}", get(stream))
+        .route("/channels.m3u", get(channel_playlist))
         .nest_service(
             "/session",
             tower_http::services::ServeDir::new(&lineup_config.output.folder),
@@ -143,15 +144,7 @@ async fn stream(
         .await
         .map_err(|_| LineupError::ChannelNotFound(String::from("channel timeout")))?;
 
-    // TODO: need scheme, host from reverse proxy
-    let host = request
-        .headers()
-        .get(axum::http::header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("localhost");
-
-    let content =
-        get_multi_variant(channel).replace("/session/", &format!("http://{host}/session/"));
+    let content = get_multi_variant(channel, request);
 
     Ok((
         [(
@@ -181,12 +174,49 @@ async fn fix_content_types(
     response
 }
 
-fn get_multi_variant(channel: &ChannelModel) -> String {
-    format!(
-        "#EXTM3U
-#EXT-X-VERSION:3
-#EXT-X-STREAM-INF:BANDWIDTH=5000000
-/session/{}/live.m3u8",
+fn get_multi_variant(channel: &ChannelModel, request: axum::extract::Request) -> String {
+    let mut result = String::new();
+    result.push_str("#EXTM3U\n");
+    result.push_str("#EXT-X-VERSION:3\n");
+    result.push_str("#EXT-X-STREAM-INF:BANDWIDTH=5000000\n");
+    result.push_str(&format!(
+        "{}/session/{}/live.m3u8",
+        get_scheme_host(&request),
         channel.number()
-    )
+    ));
+
+    result
+}
+
+async fn channel_playlist(
+    State(state): State<Arc<LineupState>>,
+    request: axum::extract::Request,
+) -> Result<impl IntoResponse, LineupError> {
+    let mut content = String::new();
+    content.push_str("#EXTM3U\n");
+    for channel in &state.channels {
+        // TODO: kodiprop when user agent starts with "kodi"
+        content.push_str(&format!("#EXTINF:0, {}\n", channel.name()));
+        content.push_str(&format!(
+            "{}/channel/{}.m3u8",
+            get_scheme_host(&request),
+            channel.number()
+        ));
+    }
+
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, "application/x-mpegurl")],
+        content,
+    ))
+}
+
+fn get_scheme_host(request: &axum::extract::Request) -> String {
+    // TODO: need scheme, host from reverse proxy
+    let host = request
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+
+    format!("http://{host}")
 }

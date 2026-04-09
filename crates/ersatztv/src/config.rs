@@ -26,6 +26,7 @@ pub struct OutputConfig {
 #[derive(Deserialize, Clone)]
 pub struct ChannelConfig {
     pub number: String,
+    pub name: String,
     pub config: String,
 }
 

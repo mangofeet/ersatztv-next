@@ -10,9 +10,10 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::{Router, routing::get};
 use clap::Parser;
-use ersatztv_core::empty_folder;
+use ersatztv_core::{HEARTBEAT_FILE_NAME, empty_folder};
 use tokio::signal;
 use tokio::sync::Mutex;
+use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 
 use crate::channel_model::ChannelModel;
@@ -81,10 +82,10 @@ async fn run() -> Result<(), LineupError> {
 
     empty_folder(std::path::Path::new(&lineup_config.output.folder)).await?;
 
-    let state = LineupState {
+    let state = Arc::new(LineupState {
         channels,
         active: Arc::new(Mutex::new(HashMap::new())),
-    };
+    });
 
     let addr = format!(
         "{}:{}",
@@ -98,11 +99,18 @@ async fn run() -> Result<(), LineupError> {
         .route("/channels.m3u", get(channel_playlist))
         .nest_service(
             "/session",
-            tower_http::services::ServeDir::new(&lineup_config.output.folder),
+            ServiceBuilder::new()
+                .layer(axum::middleware::from_fn_with_state(
+                    Arc::clone(&state),
+                    session_middleware,
+                ))
+                .service(tower_http::services::ServeDir::new(
+                    &lineup_config.output.folder,
+                )),
         )
         .layer(axum::middleware::from_fn(fix_content_types))
         .layer(CorsLayer::permissive())
-        .with_state(Arc::new(state));
+        .with_state(state);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -219,4 +227,36 @@ fn get_scheme_host(request: &axum::extract::Request) -> String {
         .unwrap_or("localhost");
 
     format!("http://{host}")
+}
+
+async fn session_middleware(
+    State(state): State<Arc<LineupState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    // touch heartbeat file for channel
+    let path = request.uri().path();
+    if path.ends_with(".ts") || path.ends_with(".m3u8") {
+        let split: Vec<&str> = request.uri().path().split('/').collect();
+        let active = state.active.lock().await;
+        if active.contains_key(split[1]) {
+            let channel_number = split[1];
+            if let Some(channel_config) =
+                state.channels.iter().find(|c| c.number() == channel_number)
+            {
+                let heartbeat_file = channel_config.output_folder().join(HEARTBEAT_FILE_NAME);
+
+                let mut exists = heartbeat_file.exists();
+                if !exists {
+                    exists = tokio::fs::write(&heartbeat_file, b"").await.is_ok();
+                }
+
+                if exists {
+                    let _ = filetime::set_file_mtime(&heartbeat_file, filetime::FileTime::now());
+                }
+            }
+        }
+    }
+
+    next.run(request).await
 }

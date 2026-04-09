@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ersatztv_core::{READY_FILE_NAME, READY_FILE_TIMEOUT, wait_for_file};
+use ersatztv_core::{HEARTBEAT_FILE_NAME, READY_FILE_NAME, READY_FILE_TIMEOUT, wait_for_file};
 use tokio::sync::{Mutex, watch};
 
 use crate::channel_model::ChannelModel;
 use crate::error::LineupError;
 
 pub struct ChannelSession {
-    _output_folder: PathBuf,
     ready_receiver: watch::Receiver<bool>,
 }
 
@@ -37,6 +36,7 @@ impl ChannelSession {
         let channel_number = channel.number().to_owned();
 
         let ready_file = channel.output_folder().join(READY_FILE_NAME);
+        let heartbeat_file = channel.output_folder().join(HEARTBEAT_FILE_NAME);
         tokio::spawn(async move {
             let _ = child.wait().await;
             log::debug!("channel {} exited", &channel_number);
@@ -45,12 +45,13 @@ impl ChannelSession {
             if ready_file.exists() {
                 let _ = tokio::fs::remove_file(&ready_file).await;
             }
+
+            if heartbeat_file.exists() {
+                let _ = tokio::fs::remove_file(&heartbeat_file).await;
+            }
         });
 
-        Ok(ChannelSession {
-            _output_folder: channel.output_folder().to_owned(),
-            ready_receiver,
-        })
+        Ok(ChannelSession { ready_receiver })
     }
 
     pub fn subscribe_ready(&self) -> watch::Receiver<bool> {

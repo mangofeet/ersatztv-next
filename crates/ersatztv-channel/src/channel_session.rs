@@ -51,6 +51,8 @@ pub struct ChannelSession {
     output_segment_template: String,
 
     state: ChannelSessionState,
+
+    timeout_notify: Arc<tokio::sync::Notify>,
 }
 
 impl ChannelSession {
@@ -101,6 +103,7 @@ impl ChannelSession {
             output_file: ffmpeg_output_file,
             output_segment_template,
             state: ChannelSessionState::SeekAndWorkAhead,
+            timeout_notify: Arc::new(tokio::sync::Notify::new()),
         })
     }
 
@@ -108,9 +111,17 @@ impl ChannelSession {
         self.prep_output_folder().await?;
 
         let pm = self.playlist_manager.clone();
+        let tn = self.timeout_notify.clone();
+
         tokio::spawn(async move {
             loop {
-                let _ = pm.lock().await.update().await;
+                let mut playlist_manager = pm.lock().await;
+                let _ = playlist_manager.update().await;
+                if *playlist_manager.timeout() {
+                    tn.notify_one();
+                    break;
+                }
+                drop(playlist_manager);
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
         });
@@ -119,7 +130,15 @@ impl ChannelSession {
         let realtime = false;
         self.transcode(realtime).await?;
 
+        let pm = self.playlist_manager.clone();
+        let tn = self.timeout_notify.clone();
+
         loop {
+            if *pm.lock().await.timeout() {
+                tn.notify_one();
+                return Err(ChannelError::IdleTimeout);
+            }
+
             let now = OffsetDateTime::now_local()?;
             let transcoded_buffer =
                 std::cmp::max(time::Duration::new(0, 0), self.transcoded_until - now);
@@ -133,7 +152,12 @@ impl ChannelSession {
                 let realtime = transcoded_buffer >= time::Duration::seconds(30);
                 self.transcode(realtime).await?;
             } else {
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                    _ = tn.notified() => {
+                        return Err(ChannelError::IdleTimeout);
+                    }
+                }
             }
         }
     }
@@ -362,15 +386,19 @@ impl ChannelSession {
 
         log::debug!("waiting for ffmpeg to terminate...");
 
-        let status = ffmpeg_child
-            .wait()
-            .await
-            .map_err(|e| ChannelError::StreamFailure(e.to_string()))?;
-
-        if !status.success() {
-            return Err(ChannelError::StreamFailure(format!(
-                "ffmpeg exited {status}"
-            )));
+        tokio::select! {
+            status = ffmpeg_child.wait() => {
+                let status = status.map_err(|e| ChannelError::StreamFailure(e.to_string()))?;
+                if !status.success() {
+                    return Err(ChannelError::StreamFailure(format!(
+                        "ffmpeg exited {status}"
+                    )));
+                }
+            }
+            _ = self.timeout_notify.notified() => {
+                ffmpeg_child.kill().await.ok();
+                return Err(ChannelError::IdleTimeout);
+            }
         }
 
         self.transcoded_until = finish;

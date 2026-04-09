@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use ersatztv_core::{HEARTBEAT_FILE_NAME, HEARTBEAT_FILE_TIMEOUT};
 use time::OffsetDateTime;
 use time::macros::format_description;
 
@@ -13,6 +14,7 @@ const MIN_SEGMENTS: usize = 4;
 pub struct PlaylistManager {
     output_folder: PathBuf,
     ready_file: PathBuf,
+    heartbeat_file: PathBuf,
     generated_playlist_file: String,
     ffmpeg_playlist_file: String,
     ready: bool,
@@ -25,6 +27,8 @@ pub struct PlaylistManager {
     target_duration_f64: f64,
     pending_discontinuity: bool,
     last_segment_end: OffsetDateTime,
+
+    timeout: bool,
 }
 
 #[derive(Clone)]
@@ -43,9 +47,12 @@ impl PlaylistManager {
         generated_playlist_file: String,
         ffmpeg_playlist_file: String,
     ) -> PlaylistManager {
+        let heartbeat_file = output_folder.join(HEARTBEAT_FILE_NAME);
+
         PlaylistManager {
             output_folder,
             ready_file,
+            heartbeat_file,
             generated_playlist_file,
             ffmpeg_playlist_file,
             ready: false,
@@ -58,7 +65,13 @@ impl PlaylistManager {
             target_duration_f64: target_duration as f64,
             pending_discontinuity: false,
             last_segment_end: channel_start_time,
+
+            timeout: false,
         }
+    }
+
+    pub fn timeout(&self) -> &bool {
+        &self.timeout
     }
 
     pub async fn before_new_pipeline(&mut self) -> Result<(), ChannelError> {
@@ -150,6 +163,12 @@ impl PlaylistManager {
         if !self.ready && self.segments.len() >= MIN_SEGMENTS {
             tokio::fs::write(&self.ready_file, b"").await?;
             self.ready = true;
+        }
+
+        if self.heartbeat_file.exists() {
+            let metadata = tokio::fs::metadata(&self.heartbeat_file).await?;
+            let modified = metadata.modified()?;
+            self.timeout = modified.elapsed().unwrap_or(Duration::MAX) > HEARTBEAT_FILE_TIMEOUT;
         }
 
         Ok(())

@@ -1,3 +1,4 @@
+use std::fmt::Formatter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +19,25 @@ use crate::playlist_manager::PlaylistManager;
 use crate::playout_loader::PlayoutLoader;
 use crate::pts_scanner::{PtsScanner, PtsTime};
 
+#[derive(Copy, Clone, PartialEq)]
+enum ChannelSessionState {
+    SeekAndWorkAhead,
+    ZeroAndWorkAhead,
+    SeekAndRealtime,
+    ZeroAndRealtime,
+}
+
+impl std::fmt::Display for ChannelSessionState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChannelSessionState::SeekAndWorkAhead => write!(f, "SeekAndWorkAhead"),
+            ChannelSessionState::ZeroAndWorkAhead => write!(f, "ZeroAndWorkAhead"),
+            ChannelSessionState::SeekAndRealtime => write!(f, "SeekAndRealtime"),
+            ChannelSessionState::ZeroAndRealtime => write!(f, "ZeroAndRealtime"),
+        }
+    }
+}
+
 pub struct ChannelSession {
     channel_config: ChannelConfig,
     playout_loader: PlayoutLoader,
@@ -29,6 +49,8 @@ pub struct ChannelSession {
 
     output_file: String,
     output_segment_template: String,
+
+    state: ChannelSessionState,
 }
 
 impl ChannelSession {
@@ -78,6 +100,7 @@ impl ChannelSession {
             ready_file,
             output_file: ffmpeg_output_file,
             output_segment_template,
+            state: ChannelSessionState::SeekAndWorkAhead,
         })
     }
 
@@ -92,7 +115,9 @@ impl ChannelSession {
             }
         });
 
-        self.transcode().await?;
+        // always work ahead initially
+        let realtime = false;
+        self.transcode(realtime).await?;
 
         loop {
             let now = OffsetDateTime::now_local()?;
@@ -104,7 +129,9 @@ impl ChannelSession {
                 transcoded_buffer.whole_seconds() % 60
             );
             if transcoded_buffer <= time::Duration::minutes(1) {
-                self.transcode().await?;
+                // only use realtime when we're at least 30 seconds ahead
+                let realtime = transcoded_buffer >= time::Duration::seconds(30);
+                self.transcode(realtime).await?;
             } else {
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
@@ -131,15 +158,52 @@ impl ChannelSession {
         Ok(())
     }
 
-    async fn transcode(&mut self) -> Result<(), ChannelError> {
+    async fn transcode(&mut self, realtime: bool) -> Result<(), ChannelError> {
+        if !realtime {
+            log::debug!("channel session will work ahead");
+
+            let next_state = match self.state {
+                ChannelSessionState::SeekAndRealtime => ChannelSessionState::SeekAndWorkAhead,
+                ChannelSessionState::ZeroAndRealtime => ChannelSessionState::ZeroAndWorkAhead,
+                _ => self.state,
+            };
+
+            if next_state != self.state {
+                log::debug!(
+                    "channel session is accelerating {} => {}",
+                    self.state,
+                    next_state
+                );
+                self.state = next_state;
+            }
+        } else {
+            log::debug!("channel session will NOT work ahead");
+
+            // throttle to realtime if needed
+            let next_state = match self.state {
+                ChannelSessionState::SeekAndWorkAhead => ChannelSessionState::SeekAndRealtime,
+                ChannelSessionState::ZeroAndWorkAhead => ChannelSessionState::ZeroAndRealtime,
+                _ => self.state,
+            };
+
+            if next_state != self.state {
+                log::debug!(
+                    "channel session is throttling {} => {}",
+                    self.state,
+                    next_state
+                );
+                self.state = next_state;
+            }
+        }
+
+        log::debug!("channel session state: {}", self.state);
+
         // get last pts offset
         let mut pts_time: Option<PtsTime> = None;
         match self.pts_scanner.get_last_pts().await {
             Ok(scanned_pts_time) => pts_time = Some(scanned_pts_time),
             Err(e) => log::debug!("failed to scan pts time: {e}"),
         }
-
-        // TODO: work ahead vs realtime
 
         // TODO: transcode error message instead of bailing
         let current_item = self
@@ -223,29 +287,58 @@ impl ChannelSession {
             pts_offset: pts_time.map(|p| PtsOffset {
                 duration: p.duration,
             }),
+            realtime,
         };
 
-        // in and out points from playout item
-        let in_point_base_ms = current_item.in_point_ms.unwrap_or(0);
-        let item_duration_ms =
-            (current_item.finish - current_item.start).whole_milliseconds() as u64;
-        let in_point = if self.transcoded_until > current_item.start {
-            Duration::from_millis(
-                in_point_base_ms
-                    + (self.transcoded_until - current_item.start).whole_milliseconds() as u64,
-            )
-        } else {
-            Duration::from_millis(in_point_base_ms)
-        };
-        let out_point = Duration::from_millis(
-            current_item
-                .out_point_ms
-                .unwrap_or(in_point_base_ms + item_duration_ms),
+        let mut is_complete = true;
+
+        let start_at_zero = matches!(
+            self.state,
+            ChannelSessionState::ZeroAndWorkAhead | ChannelSessionState::ZeroAndRealtime
         );
+
+        let item_start = current_item.start;
+        let item_finish = current_item.finish;
+        let item_duration = current_item.finish - current_item.start;
+        let item_in_point_base_ms = current_item.in_point_ms.unwrap_or(0);
+        let item_out_point_ms = current_item
+            .out_point_ms
+            .unwrap_or(item_in_point_base_ms + item_duration.whole_milliseconds() as u64);
+
+        let effective_now = if start_at_zero {
+            item_start
+        } else {
+            self.transcoded_until
+        };
+
+        let progress_ms = if start_at_zero {
+            0
+        } else {
+            (effective_now - item_start).whole_milliseconds().max(0) as u64
+        };
+        let effective_in_point = Duration::from_millis(item_in_point_base_ms + progress_ms);
+
+        let duration =
+            Duration::from_millis((item_finish - effective_now).whole_milliseconds() as u64);
+
+        let limit = if realtime {
+            Duration::ZERO
+        } else {
+            Duration::from_secs(44)
+        };
+
+        let mut finish = item_finish;
+        let mut out_point = Duration::from_millis(item_out_point_ms);
+
+        if limit > Duration::ZERO && duration > limit {
+            finish = effective_now + limit;
+            out_point = effective_in_point + limit;
+            is_complete = false;
+        }
 
         let input_settings = InputSettings {
             input: ProbedInput {
-                in_point,
+                in_point: effective_in_point,
                 out_point,
                 probe_result,
             },
@@ -280,9 +373,41 @@ impl ChannelSession {
             )));
         }
 
-        self.transcoded_until = current_item.finish;
-        log::debug!("transcoded until: {}", current_item.finish);
+        self.transcoded_until = finish;
+        log::debug!("transcoded until: {}", finish);
+
+        self.state = Self::next_state(self.state, is_complete);
 
         Ok(())
+    }
+
+    fn next_state(state: ChannelSessionState, is_complete: bool) -> ChannelSessionState {
+        let result = match state {
+            // after seeking and NOT completing the item, seek again, transcode will accelerate if needed
+            ChannelSessionState::SeekAndWorkAhead if !is_complete => {
+                ChannelSessionState::SeekAndRealtime
+            }
+
+            // after seeking and completing the item, start at zero
+            ChannelSessionState::SeekAndWorkAhead => ChannelSessionState::ZeroAndWorkAhead,
+
+            // after starting at zero and NOT completing the item, seek, transcode will accelerate if needed
+            ChannelSessionState::ZeroAndWorkAhead if !is_complete => {
+                ChannelSessionState::SeekAndRealtime
+            }
+
+            // after starting at zero and completing the item, start at zero again, transcode method will throttle if needed
+            ChannelSessionState::ZeroAndWorkAhead => ChannelSessionState::ZeroAndWorkAhead,
+
+            // realtime will always complete items, so start next at zero
+            ChannelSessionState::SeekAndRealtime => ChannelSessionState::ZeroAndRealtime,
+
+            // realtime will always complete items, so start next at zero
+            ChannelSessionState::ZeroAndRealtime => ChannelSessionState::ZeroAndRealtime,
+        };
+
+        log::debug!("channel session state {} => {}", state, result);
+
+        result
     }
 }

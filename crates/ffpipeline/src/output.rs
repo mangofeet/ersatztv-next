@@ -11,4 +11,5 @@ pub struct OutputSettings {
     pub accel: Option<HardwareAccel>,
     pub format: OutputFormat,
     pub pts_offset: Option<PtsOffset>,
+    pub realtime: bool,
 }

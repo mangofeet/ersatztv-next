@@ -284,7 +284,11 @@ impl OutputOption {
 }
 
 pub enum PipelineInput {
-    Video { path: String, seek: Duration },
+    Video {
+        path: String,
+        seek: Duration,
+        realtime: bool,
+    },
 }
 
 pub struct PipelineOutput {
@@ -356,6 +360,7 @@ impl Pipeline {
             inputs: vec![PipelineInput::Video {
                 path: input_settings.input.probe_result.path,
                 seek: input_settings.input.in_point,
+                realtime: output_settings.realtime,
             }],
             output_options: vec![
                 OutputOption::NoDemuxDecodeDelay,
@@ -407,9 +412,17 @@ impl Pipeline {
 
         for input in &self.inputs {
             match input {
-                PipelineInput::Video { path, seek } => {
+                PipelineInput::Video {
+                    path,
+                    seek,
+                    realtime,
+                } => {
                     if !seek.is_zero() {
                         result.extend([String::from("-ss"), format!("{}ms", seek.as_millis())]);
+                    }
+
+                    if *realtime {
+                        result.extend([String::from("-readrate"), String::from("1.0")]);
                     }
 
                     result.extend([String::from("-i"), path.to_owned()])

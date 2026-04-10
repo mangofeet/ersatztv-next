@@ -15,6 +15,9 @@ pub struct ChannelConfig {
 
     #[serde(skip)]
     expanded_output_folder: PathBuf,
+
+    #[serde(skip)]
+    number: String,
 }
 
 #[derive(Deserialize, Clone)]
@@ -98,6 +101,7 @@ impl ChannelConfig {
     pub async fn from_file(
         path: &PathBuf,
         output_folder: &PathBuf,
+        number: &str,
     ) -> Result<ChannelConfig, ChannelError> {
         // load and deserialize
         let config_string = tokio::fs::read_to_string(path)
@@ -124,6 +128,8 @@ impl ChannelConfig {
         channel_config.expanded_output_folder =
             expand_tilde(output_folder).ok_or(ChannelError::ChannelConfigExpandOutputFolder)?;
 
+        channel_config.number = number.to_owned();
+
         Ok(channel_config)
     }
 
@@ -133,5 +139,9 @@ impl ChannelConfig {
 
     pub fn expanded_output_folder(&self) -> &PathBuf {
         &self.expanded_output_folder
+    }
+
+    pub fn number(&self) -> &str {
+        &self.number
     }
 }

@@ -49,6 +49,6 @@ pub enum ChannelError {
     #[error("failed to scan for last pts")]
     PtsScannerFailure,
 
-    #[error("channel terminated after idle timeout")]
-    IdleTimeout,
+    #[error("channel {0} terminated after idle timeout")]
+    IdleTimeout(String),
 }

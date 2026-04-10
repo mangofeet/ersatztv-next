@@ -20,6 +20,8 @@ impl ChannelSession {
         let mut child = tokio::process::Command::new(channel_binary_path()?)
             .arg("--output-folder")
             .arg(channel.output_folder())
+            .arg("--number")
+            .arg(channel.number())
             .arg(channel.config_path())
             .spawn()
             .map_err(LineupError::Io)?;

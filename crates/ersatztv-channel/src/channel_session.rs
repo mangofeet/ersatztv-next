@@ -136,7 +136,9 @@ impl ChannelSession {
         loop {
             if *pm.lock().await.timeout() {
                 tn.notify_one();
-                return Err(ChannelError::IdleTimeout);
+                return Err(ChannelError::IdleTimeout(
+                    self.channel_config.number().to_owned(),
+                ));
             }
 
             let now = OffsetDateTime::now_local()?;
@@ -155,7 +157,7 @@ impl ChannelSession {
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_secs(5)) => {}
                     _ = tn.notified() => {
-                        return Err(ChannelError::IdleTimeout);
+                        return Err(ChannelError::IdleTimeout(self.channel_config.number().to_owned()));
                     }
                 }
             }
@@ -364,7 +366,7 @@ impl ChannelSession {
             }
             _ = self.timeout_notify.notified() => {
                 ffmpeg_child.kill().await.ok();
-                return Err(ChannelError::IdleTimeout);
+                return Err(ChannelError::IdleTimeout(self.channel_config.number().to_owned()));
             }
         }
 

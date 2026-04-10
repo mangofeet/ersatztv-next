@@ -118,7 +118,7 @@ jobs:
 
       - name: Azure login
         if: runner.os == 'Windows'
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.azure_client_id }}
           tenant-id: ${{ secrets.azure_tenant_id }}
@@ -127,10 +127,10 @@ jobs:
 
       - name: Sign Windows executables
         if: runner.os == 'Windows'
-        uses: azure/trusted-signing-action@v0
+        uses: azure/artifact-signing-action@v1
         with:
           endpoint: https://eus.codesigning.azure.net/
-          trusted-signing-account-name: ArtifactSigning
+          signing-account-name: ArtifactSigning
           certificate-profile-name: ErsatzTV
           files-folder: ${{ github.workspace }}/${{ env.RELEASE_NAME }}
           files-folder-recurse: false

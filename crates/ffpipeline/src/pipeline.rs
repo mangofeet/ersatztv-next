@@ -205,7 +205,18 @@ impl VideoCodec {
             VideoCodec::Libx265 => String::from("libx265"),
         };
 
-        vec![String::from("-vcodec"), codec]
+        let mut result = vec![String::from("-vcodec"), codec];
+
+        if self == &VideoCodec::Libx265 {
+            result.extend([
+                String::from("-tag:v"),
+                String::from("hvc1"),
+                String::from("-x265-params"),
+                String::from("log-level=error"),
+            ]);
+        };
+
+        result
     }
 }
 

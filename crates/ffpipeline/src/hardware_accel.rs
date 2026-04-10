@@ -6,11 +6,13 @@ pub enum HardwareAccel {
 }
 
 impl HardwareAccel {
-    pub(crate) fn as_arg(&self) -> String {
+    pub(crate) fn as_arg(&self) -> Vec<String> {
         match self {
-            HardwareAccel::Cuda => String::from("cuda"),
-            HardwareAccel::Qsv => String::from("qsv"),
-            HardwareAccel::VideoToolbox => String::from("videotoolbox"),
+            HardwareAccel::Cuda => vec![String::from("-hwaccel"), String::from("cuda")],
+            HardwareAccel::Qsv => vec![String::from("-hwaccel"), String::from("qsv")],
+            HardwareAccel::VideoToolbox => {
+                vec![String::from("-hwaccel"), String::from("videotoolbox")]
+            }
         }
     }
 }

@@ -63,9 +63,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: windows-latest
             target: windows-x64
-            rust_target: x86_64-pc-windows-gnu
+            rust_target: x86_64-pc-windows-msvc
             exe_ext: .exe
             archive_ext: .zip
           - os: ubuntu-latest
@@ -97,6 +97,7 @@ jobs:
       - run: rustup show active-toolchain
 
       - name: Install cross-compilation tools
+        if: runner.os != 'Windows'
         uses: taiki-e/setup-cross-toolchain-action@v1
         with:
           target: ${{ matrix.rust_target }}

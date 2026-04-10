@@ -28,6 +28,7 @@ pub enum VideoFormat {
 #[derive(Debug, Clone, Copy)]
 pub enum HardwareAccel {
     Cuda,
+    Qsv,
     VideoToolbox,
 }
 
@@ -35,6 +36,7 @@ impl HardwareAccel {
     fn as_arg(&self) -> String {
         match self {
             HardwareAccel::Cuda => String::from("cuda"),
+            HardwareAccel::Qsv => String::from("qsv"),
             HardwareAccel::VideoToolbox => String::from("videotoolbox"),
         }
     }
@@ -187,6 +189,8 @@ pub enum VideoCodec {
     Copy,
     H264Nvenc,
     HevcNvenc,
+    H264Qsv,
+    HevcQsv,
     H264VideoToolbox,
     HevcVideoToolbox,
     Libx264,
@@ -195,28 +199,29 @@ pub enum VideoCodec {
 
 impl VideoCodec {
     fn as_arg(&self) -> Vec<String> {
-        let codec = match self {
-            VideoCodec::Copy => String::from("copy"),
-            VideoCodec::H264Nvenc => String::from("h264_nvenc"),
-            VideoCodec::HevcNvenc => String::from("hevc_nvenc"),
-            VideoCodec::H264VideoToolbox => String::from("h264_videotoolbox"),
-            VideoCodec::HevcVideoToolbox => String::from("hevc_videotoolbox"),
-            VideoCodec::Libx264 => String::from("libx264"),
-            VideoCodec::Libx265 => String::from("libx265"),
+        let codec: &str = match self {
+            VideoCodec::Copy => "copy",
+            VideoCodec::H264Nvenc => "h264_nvenc",
+            VideoCodec::HevcNvenc => "hevc_nvenc",
+            VideoCodec::H264Qsv => "h264_qsv",
+            VideoCodec::HevcQsv => "hevc_qsv",
+            VideoCodec::H264VideoToolbox => "h264_videotoolbox",
+            VideoCodec::HevcVideoToolbox => "hevc_videotoolbox",
+            VideoCodec::Libx264 => "libx264",
+            VideoCodec::Libx265 => "libx265",
         };
 
-        let mut result = vec![String::from("-vcodec"), codec];
-
-        if self == &VideoCodec::Libx265 {
-            result.extend([
-                String::from("-tag:v"),
-                String::from("hvc1"),
-                String::from("-x265-params"),
-                String::from("log-level=error"),
-            ]);
+        let options = match self {
+            VideoCodec::Libx265 => vec!["-tag:v", "hvc1", "-x265-params", "log-level=error"],
+            VideoCodec::HevcQsv => vec!["-low_power", "0", "-look_ahead", "0"],
+            _ => Vec::new(),
         };
 
-        result
+        [&["-vcodec", codec], &options[..]]
+            .concat()
+            .into_iter()
+            .map(String::from)
+            .collect()
     }
 }
 
@@ -328,6 +333,8 @@ impl Pipeline {
         let video_codec = match (output_settings.accel, output_settings.video_format) {
             (Some(HardwareAccel::Cuda), Some(VideoFormat::H264)) => VideoCodec::H264Nvenc,
             (Some(HardwareAccel::Cuda), Some(VideoFormat::Hevc)) => VideoCodec::HevcNvenc,
+            (Some(HardwareAccel::Qsv), Some(VideoFormat::H264)) => VideoCodec::H264Qsv,
+            (Some(HardwareAccel::Qsv), Some(VideoFormat::Hevc)) => VideoCodec::HevcQsv,
             (Some(HardwareAccel::VideoToolbox), Some(VideoFormat::H264)) => {
                 VideoCodec::H264VideoToolbox
             }

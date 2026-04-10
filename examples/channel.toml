@@ -14,5 +14,5 @@ buffer_kbps = 384
 format = "hevc"
 bitrate_kbps = 2_000
 buffer_kbps = 4_000
-# `videotoolbox` and `cuda` accel are minimally supported at this point
+# `cuda`, `qsv` and `videotoolbox` accels are minimally supported at this point
 #accel = "cuda"

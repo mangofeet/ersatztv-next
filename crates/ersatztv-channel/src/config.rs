@@ -70,6 +70,7 @@ pub enum VideoFormat {
 #[serde(rename_all = "lowercase")]
 pub enum HardwareAccel {
     Cuda,
+    Qsv,
     VideoToolbox,
 }
 
@@ -77,6 +78,7 @@ impl From<HardwareAccel> for ffpipeline::pipeline::HardwareAccel {
     fn from(value: HardwareAccel) -> Self {
         match value {
             HardwareAccel::Cuda => ffpipeline::pipeline::HardwareAccel::Cuda,
+            HardwareAccel::Qsv => ffpipeline::pipeline::HardwareAccel::Qsv,
             HardwareAccel::VideoToolbox => ffpipeline::pipeline::HardwareAccel::VideoToolbox,
         }
     }

@@ -116,6 +116,33 @@ jobs:
           mv "target/${{ matrix.rust_target }}/release/ersatztv-channel${{ matrix.exe_ext }}" "$release_name/"
           mv "target/${{ matrix.rust_target }}/release/ersatztv${{ matrix.exe_ext }}" "$release_name/"
 
+      - name: Azure login
+        if: runner.os == 'Windows'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.azure_client_id }}
+          tenant-id: ${{ secrets.azure_tenant_id }}
+          subscription-id: ${{ secrets.azure_subscription_id }}
+          enable-AzPSSession: true
+
+      - name: Sign Windows executables
+        if: runner.os == 'Windows'
+        uses: azure/trusted-signing-action@v0
+        with:
+          endpoint: https://eus.codesigning.azure.net/
+          trusted-signing-account-name: ArtifactSigning
+          certificate-profile-name: ErsatzTV
+          files-folder: ${{ github.workspace }}/${{ env.RELEASE_NAME }}
+          files-folder-recurse: false
+          files-folder-filter: ersatztv.exe,ersatztv-channel.exe,ersatztv-playout-generator.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Archive
+        shell: bash
+        run: |
+          release_name="${{ env.RELEASE_NAME }}"
           if [ "${{ matrix.archive_ext }}" = ".zip" ]; then
             7z a "${release_name}.zip" "${release_name}"
           else

@@ -1,6 +1,12 @@
+pub mod audio_codec;
 pub mod error;
 pub mod frame_rate;
+pub mod global_option;
+pub mod hardware_accel;
 pub mod input;
-pub mod output;
+pub mod output_format;
+pub mod output_option;
+pub mod output_settings;
 pub mod pipeline;
 pub mod probe;
+pub mod video_codec;

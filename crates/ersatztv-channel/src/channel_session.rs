@@ -5,9 +5,10 @@ use std::time::Duration;
 
 use ersatztv_core::{READY_FILE_NAME, empty_folder};
 use ersatztv_playout::playout::PlayoutItemSource;
+use ffpipeline::hardware_accel::HardwareAccel;
 use ffpipeline::input::{InputSettings, ProbedInput};
-use ffpipeline::output::OutputSettings;
-use ffpipeline::pipeline::{AudioFormat, HardwareAccel, Kbps, PtsOffset, VideoFormat};
+use ffpipeline::output_settings::OutputSettings;
+use ffpipeline::pipeline::{AudioFormat, Kbps, PtsOffset, SEGMENT_SECONDS, VideoFormat};
 use ffpipeline::{pipeline, probe};
 use simple_expand_tilde::expand_tilde;
 use time::OffsetDateTime;
@@ -272,7 +273,7 @@ impl ChannelSession {
             video_bitrate: video_norm.bitrate_kbps.map(Kbps),
             video_buffer: video_norm.buffer_kbps.map(Kbps),
             accel: video_norm.accel.clone().map(HardwareAccel::from),
-            format: pipeline::OutputFormat::Hls {
+            format: ffpipeline::output_format::OutputFormat::Hls {
                 playlist: self.output_file.clone(),
                 segment_template: self.output_segment_template.clone(),
             },
@@ -316,7 +317,7 @@ impl ChannelSession {
         let limit = if realtime {
             Duration::ZERO
         } else {
-            Duration::from_secs(44)
+            Duration::from_secs(SEGMENT_SECONDS as u64 * 11u64)
         };
 
         let mut finish = item_finish;

@@ -2,13 +2,18 @@ use std::collections::HashSet;
 use std::fmt::Formatter;
 use std::time::Duration;
 
+use crate::audio_codec::AudioCodec;
 use crate::error::FFPipelineError;
 use crate::frame_rate::FrameRate;
+use crate::global_option::{GlobalOption, LogLevel};
+use crate::hardware_accel::HardwareAccel;
 use crate::input::InputSettings;
-use crate::output::OutputSettings;
+use crate::output_option::OutputOption;
+use crate::output_settings::OutputSettings;
 use crate::probe::{ProbeResultAudioStream, ProbeResultStream, ProbeResultVideoStream};
+use crate::video_codec::VideoCodec;
 
-const KEYFRAME_INTERVAL_SECONDS: u32 = 2;
+pub const KEYFRAME_INTERVAL_SECONDS: u32 = 2;
 pub const SEGMENT_SECONDS: u32 = 4;
 
 #[derive(Debug, Clone, Copy)]
@@ -26,288 +31,17 @@ pub enum VideoFormat {
     Hevc,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum HardwareAccel {
-    Cuda,
-    Qsv,
-    VideoToolbox,
-}
-
-impl HardwareAccel {
-    fn as_arg(&self) -> String {
-        match self {
-            HardwareAccel::Cuda => String::from("cuda"),
-            HardwareAccel::Qsv => String::from("qsv"),
-            HardwareAccel::VideoToolbox => String::from("videotoolbox"),
-        }
-    }
-}
-
-pub enum LogLevel {
-    Error,
-}
-
-impl LogLevel {
-    fn as_arg(&self) -> String {
-        match self {
-            LogLevel::Error => String::from("error"),
-        }
-    }
-}
-
-pub enum GlobalOption {
-    Threads(u32),
-    NoStdIn,
-    HideBanner,
-    LogLevel(LogLevel),
-    HardwareAccel(Option<HardwareAccel>),
-    StandardFormatFlags,
-}
-
-impl GlobalOption {
-    fn as_arg(&self) -> Vec<String> {
-        match self {
-            GlobalOption::Threads(count) => vec![String::from("-threads"), count.to_string()],
-            GlobalOption::NoStdIn => vec![String::from("-nostdin")],
-            GlobalOption::HideBanner => vec![String::from("-hide_banner")],
-            GlobalOption::LogLevel(level) => vec![String::from("-loglevel"), level.as_arg()],
-            GlobalOption::HardwareAccel(Some(hardware_accel)) => {
-                vec![String::from("-hwaccel"), hardware_accel.as_arg()]
-            }
-            GlobalOption::HardwareAccel(None) => Vec::new(),
-            GlobalOption::StandardFormatFlags => vec![
-                String::from("-fflags"),
-                String::from("+genpts+discardcorrupt+igndts"),
-            ],
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum OutputFormat {
-    Hls {
-        playlist: String,
-        segment_template: String,
-    },
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct PtsOffset {
     pub duration: Duration,
 }
 
-impl OutputFormat {
-    fn as_arg(&self, output_context: &OutputContext) -> Vec<String> {
-        let force_key_frames_expr = format!("expr:gte(t,n_forced*{KEYFRAME_INTERVAL_SECONDS})");
-        let segment_seconds = format!("{SEGMENT_SECONDS}");
-        let rounded_frame_rate = output_context
-            .media_frame_rate
-            .parsed_frame_rate
-            .round_ties_even() as u32;
-
-        // TODO: 1-second GOP for qsv
-        let gop = format!("{}", rounded_frame_rate * KEYFRAME_INTERVAL_SECONDS);
-        let keyint_min = format!("{}", rounded_frame_rate * KEYFRAME_INTERVAL_SECONDS);
-
-        let mut args: Vec<&str> = Vec::new();
-
-        match self {
-            OutputFormat::Hls {
-                segment_template, ..
-            } => {
-                match output_context.video_codec {
-                    VideoCodec::Copy => {}
-                    _ => {
-                        args.extend(vec![
-                            "-g",
-                            &gop,
-                            "-keyint_min",
-                            &keyint_min,
-                            "-force_key_frames",
-                            &force_key_frames_expr,
-                        ]);
-                    }
-                }
-
-                args.extend(vec![
-                    "-f",
-                    "hls",
-                    "-hls_time",
-                    &segment_seconds,
-                    "-hls_list_size",
-                    "0",
-                    "-segment_list_flags",
-                    "+live",
-                    "-hls_segment_filename",
-                    segment_template,
-                    "-hls_segment_type",
-                    "mpegts",
-                    "-hls_flags",
-                    "program_date_time+omit_endlist+append_list+independent_segments",
-                ]);
-
-                match output_context.pts_offset {
-                    Some(pts_offset) if pts_offset.duration > Duration::ZERO => {}
-                    _ => args.extend(vec![
-                        "-hls_segment_options",
-                        "mpegts_flags=+initial_discontinuity",
-                    ]),
-                }
-            }
-        }
-
-        args.into_iter().map(String::from).collect()
-    }
-
-    fn path(&self) -> String {
-        match self {
-            OutputFormat::Hls { playlist, .. } => playlist.clone(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum AudioCodec {
-    Copy,
-    Aac,
-    Ac3,
-}
-
-impl AudioCodec {
-    fn as_arg(&self) -> Vec<String> {
-        let codec = match self {
-            AudioCodec::Copy => String::from("copy"),
-            AudioCodec::Aac => String::from("aac"),
-            AudioCodec::Ac3 => String::from("ac3"),
-        };
-
-        vec![String::from("-acodec"), codec]
-    }
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum VideoCodec {
-    Copy,
-    H264Nvenc,
-    HevcNvenc,
-    H264Qsv,
-    HevcQsv,
-    H264VideoToolbox,
-    HevcVideoToolbox,
-    Libx264,
-    Libx265,
-}
-
-impl VideoCodec {
-    fn as_arg(&self) -> Vec<String> {
-        let codec: &str = match self {
-            VideoCodec::Copy => "copy",
-            VideoCodec::H264Nvenc => "h264_nvenc",
-            VideoCodec::HevcNvenc => "hevc_nvenc",
-            VideoCodec::H264Qsv => "h264_qsv",
-            VideoCodec::HevcQsv => "hevc_qsv",
-            VideoCodec::H264VideoToolbox => "h264_videotoolbox",
-            VideoCodec::HevcVideoToolbox => "hevc_videotoolbox",
-            VideoCodec::Libx264 => "libx264",
-            VideoCodec::Libx265 => "libx265",
-        };
-
-        let options = match self {
-            VideoCodec::Libx265 => vec!["-tag:v", "hvc1", "-x265-params", "log-level=error"],
-            VideoCodec::HevcQsv => vec!["-low_power", "0", "-look_ahead", "0"],
-            _ => Vec::new(),
-        };
-
-        [&["-vcodec", codec], &options[..]]
-            .concat()
-            .into_iter()
-            .map(String::from)
-            .collect()
-    }
-}
-
-struct OutputContext {
-    media_frame_rate: FrameRate,
-    audio_codec: AudioCodec,
-    audio_channels: Option<u32>,
-    video_codec: VideoCodec,
-    pts_offset: Option<PtsOffset>,
-}
-
-pub enum OutputOption {
-    Format(OutputFormat),
-    VideoCodec(VideoCodec),
-    VideoBitrate(Option<Kbps>),
-    VideoBuffer(Option<Kbps>),
-    AudioCodec(AudioCodec),
-    AudioBitrate(Option<Kbps>),
-    AudioBuffer(Option<Kbps>),
-    AudioChannels(Option<u32>),
-    Duration(Duration),
-    TsOffset(Option<PtsOffset>),
-    NoDemuxDecodeDelay,
-    MovFlagsFastStart,
-    DoNotMapMetadata,
-}
-
-impl OutputOption {
-    fn as_arg(&self, output_context: &OutputContext) -> Vec<String> {
-        match self {
-            OutputOption::Format(format) => format.as_arg(output_context),
-            OutputOption::VideoCodec(codec) => codec.as_arg(),
-            OutputOption::VideoBitrate(Some(bitrate_kbps)) => {
-                vec![
-                    String::from("-b:v"),
-                    format!("{}k", bitrate_kbps.0),
-                    String::from("-maxrate:v"),
-                    format!("{}k", bitrate_kbps.0),
-                ]
-            }
-            OutputOption::VideoBitrate(None) => Vec::new(),
-            OutputOption::VideoBuffer(Some(buffer_kbps)) => {
-                vec![String::from("-bufsize:v"), format!("{}k", buffer_kbps.0)]
-            }
-            OutputOption::VideoBuffer(None) => Vec::new(),
-            OutputOption::AudioCodec(codec) => codec.as_arg(),
-            OutputOption::AudioBitrate(Some(bitrate_kbps)) => {
-                vec![
-                    String::from("-b:a"),
-                    format!("{}k", bitrate_kbps.0),
-                    String::from("-maxrate:a"),
-                    format!("{}k", bitrate_kbps.0),
-                ]
-            }
-            OutputOption::AudioBitrate(None) => Vec::new(),
-            OutputOption::AudioBuffer(Some(buffer_kbps)) => {
-                vec![String::from("-bufsize:a"), format!("{}k", buffer_kbps.0)]
-            }
-            OutputOption::AudioBuffer(None) => Vec::new(),
-            OutputOption::AudioChannels(Some(channels)) => {
-                vec![String::from("-ac"), format!("{}", channels)]
-            }
-            OutputOption::AudioChannels(None) => Vec::new(),
-            OutputOption::Duration(duration) => {
-                vec![String::from("-t"), format!("{}ms", duration.as_millis())]
-            }
-            OutputOption::TsOffset(Some(pts_offset)) if pts_offset.duration > Duration::ZERO => {
-                vec![
-                    String::from("-output_ts_offset"),
-                    format!("{}ms", pts_offset.duration.as_millis()),
-                ]
-            }
-            OutputOption::TsOffset(_) => Vec::new(),
-            OutputOption::NoDemuxDecodeDelay => vec!["-muxdelay", "0", "-muxpreload", "0"]
-                .into_iter()
-                .map(String::from)
-                .collect(),
-            OutputOption::MovFlagsFastStart => {
-                vec![String::from("-movflags"), String::from("+faststart")]
-            }
-            OutputOption::DoNotMapMetadata => {
-                vec![String::from("-map_metadata"), String::from("-1")]
-            }
-        }
-    }
+pub(crate) struct OutputContext {
+    pub(crate) media_frame_rate: FrameRate,
+    pub(crate) audio_codec: AudioCodec,
+    pub(crate) audio_channels: Option<u32>,
+    pub(crate) video_codec: VideoCodec,
+    pub(crate) pts_offset: Option<PtsOffset>,
 }
 
 pub enum PipelineInput {
@@ -562,7 +296,7 @@ impl Pipeline {
         match all_audio_streams.len() {
             1 => {
                 log::warn!(
-                    "content contains more than one audio stream; selecting stream with largest channel count"
+                    "content contains more than one audio stream; selecting stream with greatest number of channels"
                 );
                 all_audio_streams.sort_by_key(|a| std::cmp::Reverse(a.channels));
                 Some(all_audio_streams[0])

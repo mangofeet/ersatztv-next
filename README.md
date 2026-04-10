@@ -1,7 +1,7 @@
-# ErsatzTV
-
 > [!CAUTION]
 > **VERY EARLY STAGE:** This project is a complete rewrite of ErsatzTV in Rust. It is currently in active development, experimental, and *not yet ready* for production use. Expect breaking changes, missing features, and bugs.
+
+# ErsatzTV
 
 ErsatzTV is a modular, self-hosted IPTV server that transcodes and streams your media as live TV channels.
 

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt::Formatter;
 use std::time::Duration;
 
@@ -5,7 +6,7 @@ use crate::error::FFPipelineError;
 use crate::frame_rate::FrameRate;
 use crate::input::InputSettings;
 use crate::output::OutputSettings;
-use crate::probe::ProbeResultStream;
+use crate::probe::{ProbeResultAudioStream, ProbeResultStream, ProbeResultVideoStream};
 
 const KEYFRAME_INTERVAL_SECONDS: u32 = 2;
 pub const SEGMENT_SECONDS: u32 = 4;
@@ -246,6 +247,7 @@ pub enum OutputOption {
     TsOffset(Option<PtsOffset>),
     NoDemuxDecodeDelay,
     MovFlagsFastStart,
+    DoNotMapMetadata,
 }
 
 impl OutputOption {
@@ -301,16 +303,21 @@ impl OutputOption {
             OutputOption::MovFlagsFastStart => {
                 vec![String::from("-movflags"), String::from("+faststart")]
             }
+            OutputOption::DoNotMapMetadata => {
+                vec![String::from("-map_metadata"), String::from("-1")]
+            }
         }
     }
 }
 
 pub enum PipelineInput {
     Audio {
+        index: Option<u32>,
         path: String,
         channels: u32,
     },
     Video {
+        index: Option<u32>,
         path: String,
         seek: Duration,
         realtime: bool,
@@ -358,28 +365,15 @@ impl Pipeline {
 
         let output_path = output_settings.format.path();
 
-        let media_frame_rate = input_settings
-            .input
-            .probe_result
-            .streams
-            .iter()
-            .find_map(|s| match s {
-                ProbeResultStream::Video(video_stream) => Some(video_stream.frame_rate.to_owned()),
-                _ => None,
-            })
+        let video_stream = Self::select_video_stream(&input_settings);
+        let audio_stream = Self::select_audio_stream(&input_settings);
+
+        let media_frame_rate = video_stream
+            .map(|v| v.frame_rate.to_owned())
             .unwrap_or(FrameRate::parse("24"));
 
         // should we fail instead of assuming 2 audio channels?
-        let audio_channels = input_settings
-            .input
-            .probe_result
-            .streams
-            .iter()
-            .find_map(|s| match s {
-                ProbeResultStream::Audio(audio_stream) => Some(audio_stream.channels),
-                _ => None,
-            })
-            .unwrap_or(2);
+        let audio_channels = audio_stream.map(|a| a.channels).unwrap_or(2);
 
         let output_context = OutputContext {
             audio_codec,
@@ -400,10 +394,12 @@ impl Pipeline {
             ],
             inputs: vec![
                 PipelineInput::Audio {
+                    index: audio_stream.map(|a| a.stream_index),
                     path: input_settings.input.probe_result.path.to_owned(),
                     channels: audio_channels,
                 },
                 PipelineInput::Video {
+                    index: video_stream.map(|v| v.stream_index),
                     path: input_settings.input.probe_result.path.to_owned(),
                     seek: input_settings.input.in_point,
                     realtime: output_settings.realtime,
@@ -419,6 +415,7 @@ impl Pipeline {
                 OutputOption::VideoCodec(video_codec),
                 OutputOption::VideoBitrate(output_settings.video_bitrate),
                 OutputOption::VideoBuffer(output_settings.video_buffer),
+                OutputOption::DoNotMapMetadata,
                 OutputOption::Format(output_settings.format),
                 OutputOption::Duration(duration),
                 OutputOption::TsOffset(output_settings.pts_offset),
@@ -468,17 +465,46 @@ impl Pipeline {
     pub fn args(&self) -> Vec<String> {
         let mut result: Vec<String> = Vec::new();
 
+        let mut audio_label = String::from("0:a");
+        let mut video_label = String::from("0:v");
+
+        let mut distinct_paths: HashSet<&str> = HashSet::new();
+        for input in &self.inputs {
+            match input {
+                PipelineInput::Audio { path, .. } => {
+                    distinct_paths.insert(path);
+                }
+                PipelineInput::Video { path, .. } => {
+                    distinct_paths.insert(path);
+                }
+            }
+        }
+
         result.extend(self.global_options.iter().flat_map(|o| o.as_arg()));
 
         for input in &self.inputs {
             match input {
                 // TODO: need to check if audio path differs from video path
-                PipelineInput::Audio { .. } => {}
+                PipelineInput::Audio { index, path, .. } => {
+                    let audio_input_index =
+                        distinct_paths.iter().position(|p| p == path).unwrap_or(0);
+                    if let Some(index) = index {
+                        audio_label = format!("{}:{}", audio_input_index, index);
+                    }
+                }
                 PipelineInput::Video {
+                    index,
                     path,
                     seek,
                     realtime,
+                    ..
                 } => {
+                    let video_input_index =
+                        distinct_paths.iter().position(|p| p == path).unwrap_or(0);
+                    if let Some(index) = index {
+                        video_label = format!("{}:{}", video_input_index, index);
+                    }
+
                     if !seek.is_zero() {
                         result.extend([String::from("-ss"), format!("{}ms", seek.as_millis())]);
                     }
@@ -494,6 +520,9 @@ impl Pipeline {
 
         // TODO: filter_complex
 
+        result.extend([String::from("-map"), video_label]);
+        result.extend([String::from("-map"), audio_label]);
+
         result.extend(
             self.output_options
                 .iter()
@@ -503,6 +532,44 @@ impl Pipeline {
         result.extend([self.output.path.to_owned()]);
 
         result
+    }
+
+    fn select_video_stream(input_settings: &InputSettings) -> Option<&ProbeResultVideoStream> {
+        input_settings
+            .input
+            .probe_result
+            .streams
+            .iter()
+            .find_map(|s| match s {
+                ProbeResultStream::Video(video_stream) => Some(video_stream),
+                _ => None,
+            })
+    }
+
+    fn select_audio_stream(input_settings: &InputSettings) -> Option<&ProbeResultAudioStream> {
+        let mut all_audio_streams: Vec<&ProbeResultAudioStream> = input_settings
+            .input
+            .probe_result
+            .streams
+            .iter()
+            .filter_map(|s| match s {
+                ProbeResultStream::Audio(audio_stream) => Some(audio_stream),
+                _ => None,
+            })
+            .collect();
+
+        // TODO: check for track selection from playout
+        match all_audio_streams.len() {
+            1 => {
+                log::warn!(
+                    "content contains more than one audio stream; selecting stream with largest channel count"
+                );
+                all_audio_streams.sort_by_key(|a| std::cmp::Reverse(a.channels));
+                Some(all_audio_streams[0])
+            }
+            0 => Some(all_audio_streams[0]),
+            _ => None,
+        }
     }
 }
 

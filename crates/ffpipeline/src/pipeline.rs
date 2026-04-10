@@ -228,6 +228,7 @@ impl VideoCodec {
 struct OutputContext {
     media_frame_rate: FrameRate,
     audio_codec: AudioCodec,
+    audio_channels: Option<u32>,
     video_codec: VideoCodec,
     pts_offset: Option<PtsOffset>,
 }
@@ -240,6 +241,7 @@ pub enum OutputOption {
     AudioCodec(AudioCodec),
     AudioBitrate(Option<Kbps>),
     AudioBuffer(Option<Kbps>),
+    AudioChannels(Option<u32>),
     Duration(Duration),
     TsOffset(Option<PtsOffset>),
     NoDemuxDecodeDelay,
@@ -278,6 +280,10 @@ impl OutputOption {
                 vec![String::from("-bufsize:a"), format!("{}k", buffer_kbps.0)]
             }
             OutputOption::AudioBuffer(None) => Vec::new(),
+            OutputOption::AudioChannels(Some(channels)) => {
+                vec![String::from("-ac"), format!("{}", channels)]
+            }
+            OutputOption::AudioChannels(None) => Vec::new(),
             OutputOption::Duration(duration) => {
                 vec![String::from("-t"), format!("{}ms", duration.as_millis())]
             }
@@ -300,6 +306,10 @@ impl OutputOption {
 }
 
 pub enum PipelineInput {
+    Audio {
+        path: String,
+        channels: u32,
+    },
     Video {
         path: String,
         seek: Duration,
@@ -359,8 +369,21 @@ impl Pipeline {
             })
             .unwrap_or(FrameRate::parse("24"));
 
+        // should we fail instead of assuming 2 audio channels?
+        let audio_channels = input_settings
+            .input
+            .probe_result
+            .streams
+            .iter()
+            .find_map(|s| match s {
+                ProbeResultStream::Audio(audio_stream) => Some(audio_stream.channels),
+                _ => None,
+            })
+            .unwrap_or(2);
+
         let output_context = OutputContext {
             audio_codec,
+            audio_channels: output_settings.audio_channels,
             video_codec,
             pts_offset: output_settings.pts_offset,
             media_frame_rate,
@@ -375,17 +398,24 @@ impl Pipeline {
                 GlobalOption::StandardFormatFlags,
                 GlobalOption::HardwareAccel(output_settings.accel),
             ],
-            inputs: vec![PipelineInput::Video {
-                path: input_settings.input.probe_result.path,
-                seek: input_settings.input.in_point,
-                realtime: output_settings.realtime,
-            }],
+            inputs: vec![
+                PipelineInput::Audio {
+                    path: input_settings.input.probe_result.path.to_owned(),
+                    channels: audio_channels,
+                },
+                PipelineInput::Video {
+                    path: input_settings.input.probe_result.path.to_owned(),
+                    seek: input_settings.input.in_point,
+                    realtime: output_settings.realtime,
+                },
+            ],
             output_options: vec![
                 OutputOption::NoDemuxDecodeDelay,
                 OutputOption::MovFlagsFastStart,
                 OutputOption::AudioCodec(audio_codec),
                 OutputOption::AudioBitrate(output_settings.audio_bitrate),
                 OutputOption::AudioBuffer(output_settings.audio_buffer),
+                OutputOption::AudioChannels(output_settings.audio_channels),
                 OutputOption::VideoCodec(video_codec),
                 OutputOption::VideoBitrate(output_settings.video_bitrate),
                 OutputOption::VideoBuffer(output_settings.video_buffer),
@@ -404,10 +434,22 @@ impl Pipeline {
             self.output_options.retain(|o| {
                 !matches!(
                     o,
-                    OutputOption::AudioBitrate(_) | OutputOption::AudioBuffer(_)
+                    OutputOption::AudioBitrate(_)
+                        | OutputOption::AudioBuffer(_)
+                        | OutputOption::AudioChannels(_)
                 )
             });
         };
+
+        // remove audio channels output option if input channel count matches
+        if let Some(audio_channels) = self.inputs.iter().find_map(|s| match s {
+            PipelineInput::Audio { channels, .. } => Some(channels),
+            _ => None,
+        }) && Some(audio_channels) == self.output_context.audio_channels.as_ref()
+        {
+            self.output_options
+                .retain(|o| !matches!(o, OutputOption::AudioChannels(_)));
+        }
 
         // video copy shouldn't have bitrate, hwaccel, etc
         if self.output_context.video_codec == VideoCodec::Copy {
@@ -430,6 +472,8 @@ impl Pipeline {
 
         for input in &self.inputs {
             match input {
+                // TODO: need to check if audio path differs from video path
+                PipelineInput::Audio { .. } => {}
                 PipelineInput::Video {
                     path,
                     seek,

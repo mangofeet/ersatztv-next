@@ -257,53 +257,19 @@ impl ChannelSession {
 
         log::debug!("probe result: {probe_result}");
 
+        let audio_norm = &self.channel_config.normalization.audio;
+        let video_norm = &self.channel_config.normalization.video;
+
         // generate pipeline
         let output_settings = OutputSettings {
-            audio_format: self
-                .channel_config
-                .normalization
-                .audio
-                .format
-                .clone()
-                .map(AudioFormat::from),
-            audio_bitrate: self
-                .channel_config
-                .normalization
-                .audio
-                .bitrate_kbps
-                .map(Kbps),
-            audio_buffer: self
-                .channel_config
-                .normalization
-                .audio
-                .buffer_kbps
-                .map(Kbps),
-            video_format: self
-                .channel_config
-                .normalization
-                .video
-                .format
-                .clone()
-                .map(VideoFormat::from),
-            video_bitrate: self
-                .channel_config
-                .normalization
-                .video
-                .bitrate_kbps
-                .map(Kbps),
-            video_buffer: self
-                .channel_config
-                .normalization
-                .video
-                .buffer_kbps
-                .map(Kbps),
-            accel: self
-                .channel_config
-                .normalization
-                .video
-                .accel
-                .clone()
-                .map(HardwareAccel::from),
+            audio_format: audio_norm.format.clone().map(AudioFormat::from),
+            audio_bitrate: audio_norm.bitrate_kbps.map(Kbps),
+            audio_buffer: audio_norm.buffer_kbps.map(Kbps),
+            audio_channels: audio_norm.channels,
+            video_format: video_norm.format.clone().map(VideoFormat::from),
+            video_bitrate: video_norm.bitrate_kbps.map(Kbps),
+            video_buffer: video_norm.buffer_kbps.map(Kbps),
+            accel: video_norm.accel.clone().map(HardwareAccel::from),
             format: pipeline::OutputFormat::Hls {
                 playlist: self.output_file.clone(),
                 segment_template: self.output_segment_template.clone(),

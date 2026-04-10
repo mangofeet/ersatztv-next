@@ -33,6 +33,7 @@ pub struct AudioNormalizationConfig {
     pub format: Option<AudioFormat>,
     pub bitrate_kbps: Option<u32>,
     pub buffer_kbps: Option<u32>,
+    pub channels: Option<u32>,
 }
 
 #[derive(Deserialize, Clone)]

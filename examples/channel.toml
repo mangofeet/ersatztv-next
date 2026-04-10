@@ -8,6 +8,8 @@ folder = "~/Playouts"
 format = "aac"
 bitrate_kbps = 192
 buffer_kbps = 384
+# integer number of channels, 2 means stereo, 6 means 5.1, etc.
+channels = 2
 
 [normalization.video]
 # video will be stream copied when format is not set (comment out the format line)

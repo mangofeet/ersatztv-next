@@ -5,6 +5,7 @@ pub struct OutputSettings {
     pub audio_format: Option<AudioFormat>,
     pub audio_bitrate: Option<Kbps>,
     pub audio_buffer: Option<Kbps>,
+    pub audio_channels: Option<u32>,
     pub video_format: Option<VideoFormat>,
     pub video_bitrate: Option<Kbps>,
     pub video_buffer: Option<Kbps>,

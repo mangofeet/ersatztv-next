@@ -4,12 +4,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use clap::Parser;
-use ersatztv_playout::playout::{Playout, PlayoutItem};
+use ersatztv_playout::playout::{DATE_FORMAT, Playout, PlayoutItem};
 use ffpipeline::probe::ProbeResult;
 use rand::RngExt;
 use rand::seq::SliceRandom;
 use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 use walkdir::DirEntry;
 use walkdir::WalkDir;
 
@@ -61,7 +60,7 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
 
     // generate output file name
     let start = OffsetDateTime::now_local()?.truncate_to_day();
-    let formatted_start = start.format(&Rfc3339)?;
+    let formatted_start = start.format(&DATE_FORMAT)?;
     let finish = start + time::Duration::days(1) - time::Duration::seconds(1);
 
     let video_list: Vec<(PathBuf, ProbeResult)> = video_paths.into_iter().collect();
@@ -106,7 +105,7 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
         }
     }
 
-    let formatted_finish = current_time.format(&Rfc3339)?;
+    let formatted_finish = current_time.format(&DATE_FORMAT)?;
     let output_file = format!("{formatted_start}_{formatted_finish}.json");
     log::debug!("output_file: {output_file}");
 

@@ -1,6 +1,5 @@
-use ersatztv_playout::playout::PlayoutItem;
+use ersatztv_playout::playout::{DATE_FORMAT, PlayoutItem};
 use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 
 use crate::config::ChannelConfig;
 use crate::error::ChannelError;
@@ -53,8 +52,8 @@ impl PlayoutLoader {
                 if path.ends_with(".json") {
                     let split: Vec<&str> = file_name.split("_").collect();
                     if split.len() == 2 {
-                        let maybe_start = OffsetDateTime::parse(split[0], &Rfc3339).ok();
-                        let maybe_finish = OffsetDateTime::parse(split[1], &Rfc3339).ok();
+                        let maybe_start = OffsetDateTime::parse(split[0], &DATE_FORMAT).ok();
+                        let maybe_finish = OffsetDateTime::parse(split[1], &DATE_FORMAT).ok();
                         if let (Some(start), Some(finish)) = (maybe_start, maybe_finish)
                             && now >= &start
                             && now < &finish

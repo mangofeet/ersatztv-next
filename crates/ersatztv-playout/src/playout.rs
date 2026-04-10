@@ -2,8 +2,13 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use time::format_description::well_known::{Iso8601, iso8601};
 
 use crate::error::PlayoutError;
+
+const DATE_CONFIG: iso8601::EncodedConfig =
+    iso8601::Config::DEFAULT.set_use_separators(false).encode();
+pub const DATE_FORMAT: Iso8601<DATE_CONFIG> = Iso8601::<DATE_CONFIG>;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Playout {

@@ -1,15 +1,18 @@
 [playout]
+# ./ means relative to the current directory; absolute paths are also valid
+#folder = "./playout"
 folder = "~/Playouts"
 
 [normalization.audio]
-# audio will be stream copied when format is not set
+# audio will be stream copied when format is not set (comment out the format line)
 format = "aac"
 bitrate_kbps = 192
 buffer_kbps = 384
 
 [normalization.video]
-# video will be stream copied when format is not set
+# video will be stream copied when format is not set (comment out the format line)
 format = "hevc"
 bitrate_kbps = 2_000
 buffer_kbps = 4_000
+# `videotoolbox` and `cuda` accel are minimally supported at this point
 accel = "cuda"

@@ -96,6 +96,8 @@ jobs:
       - run: rustup update stable
       - run: rustup show active-toolchain
 
+      - uses: Swatinem/rust-cache@v2
+
       - name: Install cross-compilation tools
         if: runner.os != 'Windows'
         uses: taiki-e/setup-cross-toolchain-action@v1

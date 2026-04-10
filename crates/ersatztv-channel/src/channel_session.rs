@@ -381,6 +381,7 @@ impl ChannelSession {
         // stream current item
         let mut ffmpeg_child = tokio::process::Command::new("ffmpeg")
             .args(pipeline_result.args())
+            .stdout(std::process::Stdio::null())
             .spawn()
             .map_err(|_| ChannelError::StreamFailure(String::from("failed to spawn ffmpeg")))?;
 

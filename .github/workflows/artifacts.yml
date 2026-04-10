@@ -57,24 +57,37 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D clippy::all
 
-  build_linux:
-    name: Build Linux
+  build:
+    name: Build
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
+            target: windows-x64
+            rust_target: x86_64-pc-windows-gnu
+            exe_ext: .exe
+            archive_ext: .zip
+          - os: ubuntu-latest
             target: linux-x64
             rust_target: x86_64-unknown-linux-gnu
+            exe_ext: ""
+            archive_ext: .tar.gz
           - os: ubuntu-latest
             target: linux-musl-x64
             rust_target: x86_64-unknown-linux-musl
+            exe_ext: ""
+            archive_ext: .tar.gz
           - os: ubuntu-latest
             target: linux-arm
             rust_target: armv7-unknown-linux-gnueabihf
+            exe_ext: ""
+            archive_ext: .tar.gz
           - os: ubuntu-24.04-arm
             target: linux-arm64
             rust_target: aarch64-unknown-linux-gnu
+            exe_ext: ""
+            archive_ext: .tar.gz
     steps:
       - uses: actions/checkout@v6
         with:
@@ -98,10 +111,15 @@ jobs:
           # Build everything
           cargo build --release --all-features
           mkdir "$release_name"
-          mv target/${{ matrix.rust_target }}/release/ersatztv-playout-generator "$release_name/"
-          mv target/${{ matrix.rust_target }}/release/ersatztv-channel "$release_name/"
-          mv target/${{ matrix.rust_target }}/release/ersatztv "$release_name/"
-          tar czvf "${release_name}.tar.gz" "$release_name"
+          mv "target/${{ matrix.rust_target }}/release/ersatztv-playout-generator${{ matrix.exe_ext }}" "$release_name/"
+          mv "target/${{ matrix.rust_target }}/release/ersatztv-channel${{ matrix.exe_ext }}" "$release_name/"
+          mv "target/${{ matrix.rust_target }}/release/ersatztv${{ matrix.exe_ext }}" "$release_name/"
+
+          if [ "${{ matrix.archive_ext }}" = ".zip" ]; then
+            (cd "${release_name}" && 7z a "../${release_name}.zip" .)
+          else
+            tar czvf "${release_name}.tar.gz" "$release_name"
+          fi
 
           # Delete output directory
           rm -r "$release_name"
@@ -110,15 +128,25 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.target }}
-          path: "*.tar.gz"
+          path: "*${{ matrix.archive_ext }}"
 
-  publish_linux:
-    name: Publish Linux
-    needs: [lint, build_linux]
+  publish:
+    name: Publish
+    needs: [lint, build]
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [linux-x64, linux-musl-x64, linux-arm, linux-arm64]
+        include:
+          - target: windows-x64
+            archive_ext: .zip
+          - target: linux-x64
+            archive_ext: .tar.gz
+          - target: linux-musl-x64
+            archive_ext: .tar.gz
+          - target: linux-arm
+            archive_ext: .tar.gz
+          - target: linux-arm64
+            archive_ext: .tar.gz
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v8
@@ -131,10 +159,10 @@ jobs:
           GH_TOKEN: ${{ secrets.gh_token }}
         run: |
           gh release view ${{ inputs.release_tag }} --json assets --jq '.assets[].name' --repo ${{ github.repository }} \
-            | grep '${{ matrix.target }}.tar.gz' \
+            | grep '${{ matrix.target }}${{ matrix.archive_ext }}' \
             | xargs -r -I{} gh release delete-asset ${{ inputs.release_tag }} {} --yes --repo ${{ github.repository }}
 
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.gh_token }}
-        run: gh release upload ${{ inputs.release_tag }} *.tar.gz --repo ${{ github.repository }}
+        run: gh release upload ${{ inputs.release_tag }} "*${{ matrix.archive_ext }}" --repo ${{ github.repository }}

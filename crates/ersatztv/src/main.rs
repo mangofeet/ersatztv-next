@@ -73,9 +73,13 @@ async fn run() -> Result<(), LineupError> {
                 channels.push(channel_config);
             }
             Err(err) => {
-                log::error!("{err}")
+                log::warn!("{err}")
             }
         }
+    }
+
+    if channels.is_empty() {
+        return Err(LineupError::NoChannelsLoaded);
     }
 
     log::debug!("loaded {} channel definitions", channels.len());

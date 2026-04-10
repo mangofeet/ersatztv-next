@@ -23,7 +23,18 @@ impl ChannelModel {
                 .ok_or(LineupError::LineupConfigFailure(String::from(
                     "failed to find parent of config",
                 )))?;
-            channel_config = parent.join(&channel_config).canonicalize()?;
+            let joined = parent.join(&channel_config);
+            channel_config = match joined.canonicalize() {
+                Ok(canonical) => canonical,
+                _ => joined,
+            };
+        }
+
+        if !channel_config.exists() {
+            return Err(LineupError::ChannelConfigDoesNotExist(format!(
+                "{:?}",
+                channel_config
+            )));
         }
 
         let output_folder = PathBuf::from(output_folder);

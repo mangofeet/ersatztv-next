@@ -7,8 +7,14 @@ pub enum LineupError {
     #[error("io error {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("unable to load lineup config {0}")]
+    #[error("unable to load lineup config: {0}")]
     LineupConfigFailure(String),
+
+    #[error("channel config does not exist at path: {0}")]
+    ChannelConfigDoesNotExist(String),
+
+    #[error("no channels have been loaded; please review your lineup config")]
+    NoChannelsLoaded,
 
     #[error("unable to find channel with number {0}")]
     ChannelNotFound(String),

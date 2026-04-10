@@ -117,7 +117,7 @@ jobs:
           mv "target/${{ matrix.rust_target }}/release/ersatztv${{ matrix.exe_ext }}" "$release_name/"
 
           if [ "${{ matrix.archive_ext }}" = ".zip" ]; then
-            (cd "${release_name}" && 7z a "../${release_name}.zip" .)
+            7z a "${release_name}.zip" "${release_name}"
           else
             tar czvf "${release_name}.tar.gz" "$release_name"
           fi

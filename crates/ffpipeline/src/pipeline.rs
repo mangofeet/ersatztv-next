@@ -3,6 +3,7 @@ use std::fmt::Formatter;
 use std::time::Duration;
 
 use crate::audio_codec::AudioCodec;
+use crate::audio_decoder::AudioDecoder;
 use crate::audio_filter::AudioFilter;
 use crate::error::FFPipelineError;
 use crate::filter_chain::{FilterChain, PipelineFilter};
@@ -61,6 +62,7 @@ pub enum PipelineInput {
         index: u32,
         path: String,
         channels: u32,
+        decoder: AudioDecoder,
     },
     Video {
         index: u32,
@@ -158,6 +160,7 @@ impl Pipeline {
                     index: audio_stream.stream_index,
                     path: input_settings.input.probe_result.path.to_owned(),
                     channels: audio_stream.channels,
+                    decoder: AudioDecoder::new(audio_stream, &output_settings),
                 },
                 PipelineInput::Video {
                     index: video_stream.stream_index,
@@ -262,7 +265,14 @@ impl Pipeline {
         for input in &self.inputs {
             match input {
                 // TODO: need to check if audio path differs from video path
-                PipelineInput::Audio { index, path, .. } => {
+                PipelineInput::Audio {
+                    index,
+                    path,
+                    decoder,
+                    ..
+                } => {
+                    result.extend(decoder.as_arg());
+
                     let audio_input_index =
                         distinct_paths.iter().position(|p| p == path).unwrap_or(0);
                     audio_label = format!("{}:{}", audio_input_index, index);

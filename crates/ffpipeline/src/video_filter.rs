@@ -5,6 +5,7 @@ use crate::pipeline::FrameState;
 pub enum VideoFilter {
     Scale { size: Option<FrameSize> },
     Pad { size: Option<FrameSize> },
+    Loop { codec: String },
 }
 
 impl VideoFilter {
@@ -46,6 +47,8 @@ impl VideoFilter {
                 }
             }
             VideoFilter::Pad { size: None } => None,
+            VideoFilter::Loop { codec } if codec == "png" => Some((self.clone(), state.clone())),
+            VideoFilter::Loop { .. } => None,
         }
     }
 
@@ -54,11 +57,13 @@ impl VideoFilter {
             VideoFilter::Scale { size: Some(size) } => {
                 Some(format!("scale=w={}:h={}", size.width, size.height))
             }
+            VideoFilter::Scale { .. } => None,
             VideoFilter::Pad { size: Some(size) } => Some(format!(
                 "pad={}:{}:-1:-1:color=black",
                 size.width, size.height
             )),
-            _ => None,
+            VideoFilter::Pad { .. } => None,
+            VideoFilter::Loop { .. } => Some(String::from("loop=-1:1")),
         }
     }
 }

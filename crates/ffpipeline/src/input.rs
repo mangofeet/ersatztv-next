@@ -3,7 +3,8 @@ use std::time::Duration;
 use crate::probe::ProbeResult;
 
 pub struct InputSettings {
-    pub input: ProbedInput,
+    pub audio_input: ProbedInput,
+    pub video_input: ProbedInput,
 }
 
 pub struct ProbedInput {

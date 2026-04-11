@@ -3,22 +3,25 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::config::ChannelConfig;
-use crate::error::ChannelError;
-use crate::playlist_manager::PlaylistManager;
-use crate::playout_loader::PlayoutLoader;
-use crate::pts_scanner::{PtsScanner, PtsTime};
 use ersatztv_core::{READY_FILE_NAME, empty_folder};
-use ersatztv_playout::playout::{PlayoutItemSource, TrackSelection};
+use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource, TrackSelection};
+use ffpipeline::frame_rate::FrameRate;
 use ffpipeline::frame_size::FrameSize;
 use ffpipeline::hardware_accel::HardwareAccel;
 use ffpipeline::input::{InputSettings, ProbedInput};
 use ffpipeline::output_settings::OutputSettings;
 use ffpipeline::pipeline::{AudioFormat, Kbps, PtsOffset, SEGMENT_SECONDS, VideoFormat};
+use ffpipeline::probe::ProbeResult;
 use ffpipeline::{pipeline, probe};
 use simple_expand_tilde::expand_tilde;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
+
+use crate::config::ChannelConfig;
+use crate::error::ChannelError;
+use crate::playlist_manager::PlaylistManager;
+use crate::playout_loader::PlayoutLoader;
+use crate::pts_scanner::{PtsScanner, PtsTime};
 
 #[derive(Copy, Clone, PartialEq)]
 enum ChannelSessionState {
@@ -37,6 +40,13 @@ impl std::fmt::Display for ChannelSessionState {
             ChannelSessionState::ZeroAndRealtime => write!(f, "ZeroAndRealtime"),
         }
     }
+}
+
+struct TimingResult {
+    in_point: Duration,
+    out_point: Duration,
+    finish: OffsetDateTime,
+    is_complete: bool,
 }
 
 pub struct ChannelSession {
@@ -238,27 +248,48 @@ impl ChannelSession {
             .get_current_item(&self.transcoded_until)
             .await?;
 
-        let current_source = current_item
-            .source
-            .clone()
-            .ok_or(ChannelError::PlayoutJsonSingleSourceRequired)?;
-
-        let probe_result = match current_source {
-            PlayoutItemSource::Local { path } => {
-                let expanded_path_buf =
-                    expand_tilde(&path).ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
-                let expanded_path = expanded_path_buf
-                    .as_os_str()
-                    .to_str()
-                    .ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
-
-                // probe current item
-                Ok(probe::probe(expanded_path)?)
+        let current_source = current_item.source.clone();
+        let audio_source = match current_source.as_ref() {
+            Some(source) => Ok(source.to_owned()),
+            None => {
+                let audio_track_source = current_item
+                    .tracks
+                    .as_ref()
+                    .and_then(|t| t.audio.as_ref())
+                    .and_then(|a| match a {
+                        TrackSelection::Source { source, .. } => Some(source.to_owned()),
+                        _ => None,
+                    });
+                match audio_track_source {
+                    Some(source) => Ok(source),
+                    None => Err(ChannelError::PlayoutJsonAudioSourceRequired),
+                }
             }
-            _ => Err(ChannelError::PlayoutJsonLocalSourceRequired),
+        }?;
+        let video_source = match current_source.as_ref() {
+            Some(source) => Ok(source.to_owned()),
+            None => {
+                let video_track_source = current_item
+                    .tracks
+                    .as_ref()
+                    .and_then(|t| t.video.as_ref())
+                    .and_then(|v| match v {
+                        TrackSelection::Source { source, .. } => Some(source.clone()),
+                        _ => None,
+                    });
+                match video_track_source {
+                    Some(source) => Ok(source),
+                    None => Err(ChannelError::PlayoutJsonVideoSourceRequired),
+                }
+            }
         }?;
 
-        log::debug!("probe result: {probe_result}");
+        let audio_probe_result = Self::probe_source(&audio_source)?;
+        let video_probe_result = if video_source == audio_source {
+            audio_probe_result.clone()
+        } else {
+            Self::probe_source(&video_source)?
+        };
 
         let audio_norm = &self.channel_config.normalization.audio;
         let video_norm = &self.channel_config.normalization.video;
@@ -287,53 +318,21 @@ impl ChannelSession {
                 duration: p.duration,
             }),
             realtime,
-        };
 
-        let mut is_complete = true;
+            frame_rate: if video_probe_result.is_still_image() {
+                Some(FrameRate::default())
+            } else {
+                None
+            },
+        };
 
         let start_at_zero = matches!(
             self.state,
             ChannelSessionState::ZeroAndWorkAhead | ChannelSessionState::ZeroAndRealtime
         );
 
-        let item_start = current_item.start;
-        let item_finish = current_item.finish;
-        let item_duration = current_item.finish - current_item.start;
-        let item_in_point_base_ms = current_item.in_point_ms.unwrap_or(0);
-        let item_out_point_ms = current_item
-            .out_point_ms
-            .unwrap_or(item_in_point_base_ms + item_duration.whole_milliseconds() as u64);
-
-        let effective_now = if start_at_zero {
-            item_start
-        } else {
-            self.transcoded_until
-        };
-
-        let progress_ms = if start_at_zero {
-            0
-        } else {
-            (effective_now - item_start).whole_milliseconds().max(0) as u64
-        };
-        let effective_in_point = Duration::from_millis(item_in_point_base_ms + progress_ms);
-
-        let duration =
-            Duration::from_millis((item_finish - effective_now).whole_milliseconds() as u64);
-
-        let limit = if realtime {
-            Duration::ZERO
-        } else {
-            Duration::from_secs(SEGMENT_SECONDS as u64 * 11u64)
-        };
-
-        let mut finish = item_finish;
-        let mut out_point = Duration::from_millis(item_out_point_ms);
-
-        if limit > Duration::ZERO && duration > limit {
-            finish = effective_now + limit;
-            out_point = effective_in_point + limit;
-            is_complete = false;
-        }
+        let audio_timing = self.input_timing(&current_item, &audio_source, start_at_zero, realtime);
+        let video_timing = self.input_timing(&current_item, &video_source, start_at_zero, realtime);
 
         let video_index = current_item
             .tracks
@@ -354,18 +353,30 @@ impl ChannelSession {
             });
 
         let input_settings = InputSettings {
-            input: ProbedInput {
-                in_point: effective_in_point,
-                out_point,
-                probe_result,
+            audio_input: ProbedInput {
+                in_point: audio_timing.in_point,
+                out_point: audio_timing.out_point,
+                probe_result: audio_probe_result,
                 audio_index,
+                video_index: None,
+            },
+            video_input: ProbedInput {
+                in_point: if video_probe_result.is_still_image() {
+                    Duration::ZERO
+                } else {
+                    video_timing.in_point
+                },
+                out_point: video_timing.out_point,
+                probe_result: video_probe_result,
+                audio_index: None,
                 video_index,
             },
         };
 
         let mut pipeline_result = pipeline::generate_pipeline(input_settings, output_settings)?;
         pipeline_result.optimize();
-        log::debug!("optimized pipeline: {pipeline_result}");
+        let args = pipeline_result.args();
+        log::debug!("optimized pipeline: {}", args.join(" "));
 
         self.playlist_manager
             .lock()
@@ -375,7 +386,7 @@ impl ChannelSession {
 
         // stream current item
         let mut ffmpeg_child = tokio::process::Command::new("ffmpeg")
-            .args(pipeline_result.args())
+            .args(args)
             .stdout(std::process::Stdio::null())
             .spawn()
             .map_err(|_| ChannelError::StreamFailure(String::from("failed to spawn ffmpeg")))?;
@@ -397,10 +408,13 @@ impl ChannelSession {
             }
         }
 
-        self.transcoded_until = finish;
-        log::debug!("transcoded until: {}", finish);
+        self.transcoded_until = std::cmp::min(audio_timing.finish, video_timing.finish);
+        log::debug!("transcoded until: {}", self.transcoded_until);
 
-        self.state = Self::next_state(self.state, is_complete);
+        self.state = Self::next_state(
+            self.state,
+            audio_timing.is_complete && video_timing.is_complete,
+        );
 
         Ok(())
     }
@@ -433,5 +447,87 @@ impl ChannelSession {
         log::debug!("channel session state {} => {}", state, result);
 
         result
+    }
+
+    fn probe_source(source: &PlayoutItemSource) -> Result<ProbeResult, ChannelError> {
+        match source {
+            PlayoutItemSource::Local { path, .. } => {
+                let expanded_path_buf =
+                    expand_tilde(path).ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
+                let expanded_path = expanded_path_buf
+                    .as_os_str()
+                    .to_str()
+                    .ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
+
+                // probe current item
+                let probe_result = probe::probe(expanded_path)?;
+
+                Ok(probe_result)
+            }
+            //PlayoutItemSource::Lavfi { params } => {
+            //},
+            _ => Err(ChannelError::PlayoutJsonLocalSourceRequired),
+        }
+    }
+
+    fn input_timing(
+        &self,
+        current_item: &PlayoutItem,
+        source: &PlayoutItemSource,
+        start_at_zero: bool,
+        realtime: bool,
+    ) -> TimingResult {
+        let mut is_complete = true;
+
+        let item_start = current_item.start;
+        let item_finish = current_item.finish;
+        let item_duration = current_item.finish - current_item.start;
+        let item_in_point_base_ms = match source {
+            PlayoutItemSource::Local { in_point_ms, .. } => in_point_ms.unwrap_or(0),
+            _ => 0,
+        };
+        let item_out_point_ms = match source {
+            PlayoutItemSource::Local { out_point_ms, .. } => out_point_ms
+                .unwrap_or(item_in_point_base_ms + item_duration.whole_milliseconds() as u64),
+            _ => item_in_point_base_ms + item_duration.whole_milliseconds() as u64,
+        };
+
+        let effective_now = if start_at_zero {
+            item_start
+        } else {
+            self.transcoded_until
+        };
+
+        let progress_ms = if start_at_zero {
+            0
+        } else {
+            (effective_now - item_start).whole_milliseconds().max(0) as u64
+        };
+        let effective_in_point = Duration::from_millis(item_in_point_base_ms + progress_ms);
+
+        let duration =
+            Duration::from_millis((item_finish - effective_now).whole_milliseconds() as u64);
+
+        let limit = if realtime {
+            Duration::ZERO
+        } else {
+            Duration::from_secs(SEGMENT_SECONDS as u64 * 11u64)
+        };
+
+        let mut finish = item_finish;
+        let mut out_point = Duration::from_millis(item_out_point_ms);
+
+        if limit > Duration::ZERO && duration > limit {
+            finish = effective_now + limit;
+            out_point = effective_in_point + limit;
+            is_complete = false;
+        }
+
+        TimingResult {
+            in_point: effective_in_point,
+            out_point,
+            finish,
+            is_complete,
+        }
     }
 }

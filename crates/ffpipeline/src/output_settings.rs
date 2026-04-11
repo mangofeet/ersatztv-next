@@ -1,3 +1,4 @@
+use crate::frame_rate::FrameRate;
 use crate::frame_size::FrameSize;
 use crate::hardware_accel::HardwareAccel;
 use crate::output_format::OutputFormat;
@@ -17,4 +18,5 @@ pub struct OutputSettings {
     pub format: OutputFormat,
     pub pts_offset: Option<PtsOffset>,
     pub realtime: bool,
+    pub frame_rate: Option<FrameRate>,
 }

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::audio_codec::AudioCodec;
+use crate::frame_rate::FrameRate;
 use crate::output_format::OutputFormat;
 use crate::pipeline::{Kbps, OutputContext, PtsOffset};
 use crate::video_codec::VideoCodec;
@@ -19,6 +20,7 @@ pub enum OutputOption {
     NoDemuxDecodeDelay,
     MovFlagsFastStart,
     DoNotMapMetadata,
+    FrameRate(Option<FrameRate>),
 }
 
 impl OutputOption {
@@ -77,6 +79,15 @@ impl OutputOption {
             OutputOption::DoNotMapMetadata => {
                 vec![String::from("-map_metadata"), String::from("-1")]
             }
+            OutputOption::FrameRate(Some(frame_rate)) => {
+                vec![
+                    String::from("-r"),
+                    frame_rate.r_frame_rate.to_owned(),
+                    String::from("-vsync"),
+                    String::from("cfr"),
+                ]
+            }
+            OutputOption::FrameRate(_) => Vec::new(),
         }
     }
 }

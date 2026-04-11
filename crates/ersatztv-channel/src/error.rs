@@ -31,14 +31,17 @@ pub enum ChannelError {
     #[error("unable to find current item in playout JSON")]
     PlayoutJsonNoItem,
 
-    #[error("only single sources are supported as playout items")]
-    PlayoutJsonSingleSourceRequired,
-
     #[error("only local sources are supported as playout items")]
     PlayoutJsonLocalSourceRequired,
 
     #[error("local source is invalid for playout item")]
     PlayoutJsonInvalidLocalSource,
+
+    #[error("audio source is required for playout item")]
+    PlayoutJsonAudioSourceRequired,
+
+    #[error("vudei source is required for playout item")]
+    PlayoutJsonVideoSourceRequired,
 
     #[error("{0}")]
     PipelineError(#[from] FFPipelineError),

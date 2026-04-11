@@ -78,6 +78,13 @@ impl std::fmt::Display for ProbeResult {
     }
 }
 
+impl ProbeResult {
+    pub fn is_still_image(&self) -> bool {
+        // TODO: better check
+        self.duration.is_none() && self.streams.len() == 1
+    }
+}
+
 #[derive(Deserialize)]
 struct ProbeOutputStream {
     index: u32,

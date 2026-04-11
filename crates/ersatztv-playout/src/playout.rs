@@ -33,10 +33,6 @@ pub struct PlayoutItem {
     #[serde(with = "time::serde::rfc3339")]
     pub finish: OffsetDateTime,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub in_point_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub out_point_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<PlayoutItemSource>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tracks: Option<PlayoutItemTracks>,
@@ -55,10 +51,10 @@ impl PlayoutItem {
             id,
             start,
             finish,
-            in_point_ms: in_point.map(|d| d.as_millis() as u64),
-            out_point_ms: out_point.map(|d| d.as_millis() as u64),
             source: Some(PlayoutItemSource::Local {
                 path: path.to_string_lossy().to_string(),
+                in_point_ms: in_point.map(|d| d.as_millis() as u64),
+                out_point_ms: out_point.map(|d| d.as_millis() as u64),
             }),
             tracks: None,
         })
@@ -82,11 +78,19 @@ pub enum TrackSelection {
     StreamIndex { stream_index: u32 },
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(tag = "source_type", rename_all = "snake_case")]
 pub enum PlayoutItemSource {
-    Local { path: String },
-    Lavfi { params: String },
+    Local {
+        path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        in_point_ms: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        out_point_ms: Option<u64>,
+    },
+    Lavfi {
+        params: String,
+    },
 }
 
 pub struct PlayoutLoadResult {

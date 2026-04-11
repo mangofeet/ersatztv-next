@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use clap::Parser;
-use ersatztv_playout::playout::{DATE_FORMAT, Playout, PlayoutItem};
-use ffpipeline::probe::ProbeResult;
+use ersatztv_playout::playout::{
+    DATE_FORMAT, Playout, PlayoutItem, PlayoutItemSource, PlayoutItemTracks, TrackSelection,
+};
+use ffpipeline::probe::{ProbeResult, ProbeResultStream};
 use rand::RngExt;
 use rand::seq::SliceRandom;
 use time::OffsetDateTime;
@@ -18,6 +20,8 @@ static VIDEO_EXTENSIONS: &[&str] = &[
     "avs", "mpg", "mp2", "mpeg", "mpe", "mpv", "ogg", "ogv", "mp4", "m4p", "m4v", "avi", "wmv",
     "mov", "mkv", "m2ts", "ts", "webm",
 ];
+
+static IMAGE_EXTENSIONS: &[&str] = &["png"];
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -47,7 +51,7 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
-        .filter(is_video_extension)
+        .filter(|e| is_video_extension(e) || is_image_extension(e))
         .filter_map(to_probe_result)
     {
         log::debug!("path: {path_and_probe:?}");
@@ -90,8 +94,24 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
         let (path, probe_result) = &shuffled[cursor];
         cursor += 1;
 
-        if let Some(scheduled_duration) = probe_result.duration
-            && let Ok(playout_item) = PlayoutItem::new(
+        let is_image = probe_result.streams.len() == 1
+            && matches!(probe_result.streams.first(), Some(ProbeResultStream::Video(video_stream)) if IMAGE_EXTENSIONS.contains(&video_stream.codec.as_str()));
+
+        // use 10-sec duration for images
+        let image_duration = std::time::Duration::from_secs(10);
+        let duration = match probe_result.duration {
+            Some(d) => Some(d),
+            None => {
+                if is_image {
+                    Some(image_duration)
+                } else {
+                    None
+                }
+            }
+        };
+
+        if let Some(scheduled_duration) = duration
+            && let Ok(mut playout_item) = PlayoutItem::new(
                 uuid::Uuid::new_v4().to_string(),
                 current_time,
                 current_time + scheduled_duration,
@@ -100,6 +120,31 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
                 path,
             )
         {
+            // use separate tracks with lavfi audio for images
+            if is_image {
+                playout_item.tracks = Some(PlayoutItemTracks {
+                    audio: Some(TrackSelection::Source {
+                        // source: PlayoutItemSource::Lavfi {
+                        //     params: format!(
+                        //         "anullsrc=channel_layout=stereo:sample_rate=48000:d={}",
+                        //         image_duration.as_secs()
+                        //     ),
+                        // },
+                        source: PlayoutItemSource::Local {
+                            path: String::from("~/Music/silence.mp3"),
+                            in_point_ms: None,
+                            out_point_ms: Some(image_duration.as_millis() as u64),
+                        },
+                    }),
+                    video: playout_item
+                        .source
+                        .as_ref()
+                        .map(|s| TrackSelection::Source { source: s.clone() }),
+                });
+
+                playout_item.source = None;
+            }
+
             playout_items.push(playout_item);
             current_time += scheduled_duration;
         }
@@ -126,6 +171,16 @@ fn is_video_extension(dir_entry: &DirEntry) -> bool {
         && let Some(extension) = extension.to_str()
     {
         return VIDEO_EXTENSIONS.contains(&extension);
+    }
+
+    false
+}
+
+fn is_image_extension(dir_entry: &DirEntry) -> bool {
+    if let Some(extension) = dir_entry.path().extension()
+        && let Some(extension) = extension.to_str()
+    {
+        return IMAGE_EXTENSIONS.contains(&extension);
     }
 
     false

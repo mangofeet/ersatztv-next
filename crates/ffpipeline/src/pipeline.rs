@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::fmt::Formatter;
 use std::time::Duration;
 
@@ -16,6 +15,7 @@ use crate::output_option::OutputOption;
 use crate::output_settings::OutputSettings;
 use crate::probe::{ProbeResultAudioStream, ProbeResultStream, ProbeResultVideoStream};
 use crate::video_codec::VideoCodec;
+use crate::video_decoder::VideoDecoder;
 use crate::video_filter::VideoFilter;
 
 pub const KEYFRAME_INTERVAL_SECONDS: u32 = 2;
@@ -61,6 +61,7 @@ pub enum PipelineInput {
     Audio {
         index: u32,
         path: String,
+        seek: Duration,
         channels: u32,
         decoder: AudioDecoder,
     },
@@ -69,6 +70,7 @@ pub enum PipelineInput {
         path: String,
         seek: Duration,
         realtime: bool,
+        decoder: VideoDecoder,
     },
 }
 
@@ -93,7 +95,12 @@ impl Pipeline {
         input_settings: InputSettings,
         output_settings: OutputSettings,
     ) -> Result<Pipeline, FFPipelineError> {
-        let duration = input_settings.input.out_point - input_settings.input.in_point;
+        let duration = std::cmp::min(
+            input_settings.audio_input.out_point - input_settings.audio_input.in_point,
+            input_settings.video_input.out_point - input_settings.video_input.in_point,
+        );
+
+        log::debug!("duration is {:?}", duration);
 
         let audio_codec = match output_settings.audio_format {
             Some(AudioFormat::Aac) => AudioCodec::Aac,
@@ -158,20 +165,25 @@ impl Pipeline {
             inputs: vec![
                 PipelineInput::Audio {
                     index: audio_stream.stream_index,
-                    path: input_settings.input.probe_result.path.to_owned(),
+                    path: input_settings.audio_input.probe_result.path.to_owned(),
+                    seek: input_settings.audio_input.in_point,
                     channels: audio_stream.channels,
                     decoder: AudioDecoder::new(audio_stream, &output_settings),
                 },
                 PipelineInput::Video {
                     index: video_stream.stream_index,
-                    path: input_settings.input.probe_result.path.to_owned(),
-                    seek: input_settings.input.in_point,
+                    path: input_settings.video_input.probe_result.path.to_owned(),
+                    seek: input_settings.video_input.in_point,
                     realtime: output_settings.realtime,
+                    decoder: VideoDecoder::new(video_stream, &output_settings),
                 },
             ],
             filter_chain: FilterChain::new(vec![
                 PipelineFilter::Audio(AudioFilter::Resample),
                 PipelineFilter::Audio(AudioFilter::Pad),
+                PipelineFilter::Video(VideoFilter::Loop {
+                    codec: video_stream.codec.to_owned(),
+                }),
                 PipelineFilter::Video(VideoFilter::Scale {
                     size: initial_scaled_size,
                 }),
@@ -193,6 +205,7 @@ impl Pipeline {
                 OutputOption::Format(output_settings.format),
                 OutputOption::Duration(duration),
                 OutputOption::TsOffset(output_settings.pts_offset),
+                OutputOption::FrameRate(output_settings.frame_rate),
             ],
             output: PipelineOutput { path: output_path },
             output_context,
@@ -248,15 +261,14 @@ impl Pipeline {
         let mut audio_label = String::from("0:a");
         let mut video_label = String::from("0:v");
 
-        let mut distinct_paths: HashSet<&str> = HashSet::new();
+        let mut distinct_paths: Vec<&str> = Vec::new();
         for input in &self.inputs {
-            match input {
-                PipelineInput::Audio { path, .. } => {
-                    distinct_paths.insert(path);
-                }
-                PipelineInput::Video { path, .. } => {
-                    distinct_paths.insert(path);
-                }
+            let path = match input {
+                PipelineInput::Audio { path, .. } => path.as_str(),
+                PipelineInput::Video { path, .. } => path.as_str(),
+            };
+            if !distinct_paths.contains(&path) {
+                distinct_paths.push(path);
             }
         }
 
@@ -264,7 +276,6 @@ impl Pipeline {
 
         for input in &self.inputs {
             match input {
-                // TODO: need to check if audio path differs from video path
                 PipelineInput::Audio {
                     index,
                     path,
@@ -276,14 +287,22 @@ impl Pipeline {
                     let audio_input_index =
                         distinct_paths.iter().position(|p| p == path).unwrap_or(0);
                     audio_label = format!("{}:{}", audio_input_index, index);
+
+                    // if more than one path, audio is probably separate from video
+                    if distinct_paths.len() > 1 {
+                        result.extend([String::from("-i"), path.to_owned()]);
+                    }
                 }
                 PipelineInput::Video {
                     index,
                     path,
                     seek,
                     realtime,
+                    decoder,
                     ..
                 } => {
+                    result.extend(decoder.as_arg());
+
                     let video_input_index =
                         distinct_paths.iter().position(|p| p == path).unwrap_or(0);
                     video_label = format!("{}:{}", video_input_index, index);
@@ -296,7 +315,7 @@ impl Pipeline {
                         result.extend([String::from("-readrate"), String::from("1.0")]);
                     }
 
-                    result.extend([String::from("-i"), path.to_owned()])
+                    result.extend([String::from("-i"), path.to_owned()]);
                 }
             }
         }
@@ -324,7 +343,7 @@ impl Pipeline {
         input_settings: &InputSettings,
     ) -> Result<&ProbeResultVideoStream, FFPipelineError> {
         let mut all_video_streams: Vec<&ProbeResultVideoStream> = input_settings
-            .input
+            .video_input
             .probe_result
             .streams
             .iter()
@@ -334,7 +353,7 @@ impl Pipeline {
             })
             .collect();
 
-        if let Some(video_index) = input_settings.input.video_index {
+        if let Some(video_index) = input_settings.video_input.video_index {
             let matched_stream = all_video_streams
                 .iter()
                 .find(|v| v.stream_index == video_index);
@@ -369,7 +388,7 @@ impl Pipeline {
         input_settings: &InputSettings,
     ) -> Result<&ProbeResultAudioStream, FFPipelineError> {
         let mut all_audio_streams: Vec<&ProbeResultAudioStream> = input_settings
-            .input
+            .audio_input
             .probe_result
             .streams
             .iter()
@@ -379,7 +398,7 @@ impl Pipeline {
             })
             .collect();
 
-        if let Some(audio_index) = input_settings.input.audio_index {
+        if let Some(audio_index) = input_settings.audio_input.audio_index {
             let matched_stream = all_audio_streams
                 .iter()
                 .find(|a| a.stream_index == audio_index);

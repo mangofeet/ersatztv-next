@@ -26,3 +26,12 @@ impl FrameRate {
         }
     }
 }
+
+impl Default for FrameRate {
+    fn default() -> Self {
+        FrameRate {
+            r_frame_rate: String::from("24"),
+            parsed_frame_rate: 24.0f64,
+        }
+    }
+}

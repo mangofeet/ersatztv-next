@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use crate::audio_codec::AudioCodec;
 use crate::error::FFPipelineError;
+use crate::filter_chain::{FilterChain, PipelineFilter};
 use crate::frame_rate::FrameRate;
+use crate::frame_size::FrameSize;
 use crate::global_option::{GlobalOption, LogLevel};
 use crate::hardware_accel::HardwareAccel;
 use crate::input::InputSettings;
@@ -12,6 +14,7 @@ use crate::output_option::OutputOption;
 use crate::output_settings::OutputSettings;
 use crate::probe::{ProbeResultAudioStream, ProbeResultStream, ProbeResultVideoStream};
 use crate::video_codec::VideoCodec;
+use crate::video_filter::VideoFilter;
 
 pub const KEYFRAME_INTERVAL_SECONDS: u32 = 2;
 pub const SEGMENT_SECONDS: u32 = 4;
@@ -44,14 +47,19 @@ pub(crate) struct OutputContext {
     pub(crate) pts_offset: Option<PtsOffset>,
 }
 
+#[derive(Clone)]
+pub(crate) struct FrameState {
+    pub(crate) size: FrameSize,
+}
+
 pub enum PipelineInput {
     Audio {
-        index: Option<u32>,
+        index: u32,
         path: String,
         channels: u32,
     },
     Video {
-        index: Option<u32>,
+        index: u32,
         path: String,
         seek: Duration,
         realtime: bool,
@@ -63,8 +71,11 @@ pub struct PipelineOutput {
 }
 
 pub struct Pipeline {
+    initial_state: FrameState,
+
     global_options: Vec<GlobalOption>,
     inputs: Vec<PipelineInput>,
+    filter_chain: FilterChain,
     output_options: Vec<OutputOption>,
     output: PipelineOutput,
 
@@ -72,7 +83,10 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    fn full(input_settings: InputSettings, output_settings: OutputSettings) -> Pipeline {
+    fn full(
+        input_settings: InputSettings,
+        output_settings: OutputSettings,
+    ) -> Result<Pipeline, FFPipelineError> {
         let duration = input_settings.input.out_point - input_settings.input.in_point;
 
         let audio_codec = match output_settings.audio_format {
@@ -99,25 +113,31 @@ impl Pipeline {
 
         let output_path = output_settings.format.path();
 
-        let video_stream = Self::select_video_stream(&input_settings);
-        let audio_stream = Self::select_audio_stream(&input_settings);
+        let video_stream = Self::select_video_stream(&input_settings)?;
+        let audio_stream = Self::select_audio_stream(&input_settings)?;
 
-        let media_frame_rate = video_stream
-            .map(|v| v.frame_rate.to_owned())
-            .unwrap_or(FrameRate::parse("24"));
+        let initial_state = FrameState {
+            size: FrameSize {
+                width: video_stream.width,
+                height: video_stream.height,
+            },
+        };
 
-        // should we fail instead of assuming 2 audio channels?
-        let audio_channels = audio_stream.map(|a| a.channels).unwrap_or(2);
+        let initial_scaled_size = output_settings
+            .video_size
+            .as_ref()
+            .map(|s| s.square_pixel_size(&initial_state));
 
         let output_context = OutputContext {
             audio_codec,
             audio_channels: output_settings.audio_channels,
             video_codec,
             pts_offset: output_settings.pts_offset,
-            media_frame_rate,
+            media_frame_rate: video_stream.frame_rate.to_owned(),
         };
 
-        Pipeline {
+        Ok(Pipeline {
+            initial_state,
             global_options: vec![
                 GlobalOption::Threads(0),
                 GlobalOption::NoStdIn,
@@ -128,17 +148,25 @@ impl Pipeline {
             ],
             inputs: vec![
                 PipelineInput::Audio {
-                    index: audio_stream.map(|a| a.stream_index),
+                    index: audio_stream.stream_index,
                     path: input_settings.input.probe_result.path.to_owned(),
-                    channels: audio_channels,
+                    channels: audio_stream.channels,
                 },
                 PipelineInput::Video {
-                    index: video_stream.map(|v| v.stream_index),
+                    index: video_stream.stream_index,
                     path: input_settings.input.probe_result.path.to_owned(),
                     seek: input_settings.input.in_point,
                     realtime: output_settings.realtime,
                 },
             ],
+            filter_chain: FilterChain::new(vec![
+                PipelineFilter::Video(VideoFilter::Scale {
+                    size: initial_scaled_size,
+                }),
+                PipelineFilter::Video(VideoFilter::Pad {
+                    size: output_settings.video_size.to_owned(),
+                }),
+            ]),
             output_options: vec![
                 OutputOption::NoDemuxDecodeDelay,
                 OutputOption::MovFlagsFastStart,
@@ -156,10 +184,12 @@ impl Pipeline {
             ],
             output: PipelineOutput { path: output_path },
             output_context,
-        }
+        })
     }
 
     pub fn optimize(&mut self) {
+        self.filter_chain.optimize(&self.initial_state);
+
         // audio copy shouldn't have bitrate etc
         if self.output_context.audio_codec == AudioCodec::Copy {
             self.output_options.retain(|o| {
@@ -222,9 +252,7 @@ impl Pipeline {
                 PipelineInput::Audio { index, path, .. } => {
                     let audio_input_index =
                         distinct_paths.iter().position(|p| p == path).unwrap_or(0);
-                    if let Some(index) = index {
-                        audio_label = format!("{}:{}", audio_input_index, index);
-                    }
+                    audio_label = format!("{}:{}", audio_input_index, index);
                 }
                 PipelineInput::Video {
                     index,
@@ -235,9 +263,7 @@ impl Pipeline {
                 } => {
                     let video_input_index =
                         distinct_paths.iter().position(|p| p == path).unwrap_or(0);
-                    if let Some(index) = index {
-                        video_label = format!("{}:{}", video_input_index, index);
-                    }
+                    video_label = format!("{}:{}", video_input_index, index);
 
                     if !seek.is_zero() {
                         result.extend([String::from("-ss"), format!("{}ms", seek.as_millis())]);
@@ -252,10 +278,13 @@ impl Pipeline {
             }
         }
 
-        // TODO: filter_complex
+        let mut filter_chain = self.filter_chain.to_owned();
+        filter_chain.build(&audio_label, &video_label);
 
-        result.extend([String::from("-map"), video_label]);
-        result.extend([String::from("-map"), audio_label]);
+        result.extend(filter_chain.as_arg());
+
+        result.extend([String::from("-map"), filter_chain.video_label().to_owned()]);
+        result.extend([String::from("-map"), filter_chain.audio_label().to_owned()]);
 
         result.extend(
             self.output_options
@@ -268,7 +297,9 @@ impl Pipeline {
         result
     }
 
-    fn select_video_stream(input_settings: &InputSettings) -> Option<&ProbeResultVideoStream> {
+    fn select_video_stream(
+        input_settings: &InputSettings,
+    ) -> Result<&ProbeResultVideoStream, FFPipelineError> {
         let mut all_video_streams: Vec<&ProbeResultVideoStream> = input_settings
             .input
             .probe_result
@@ -287,7 +318,7 @@ impl Pipeline {
 
             match matched_stream {
                 Some(video_stream) => {
-                    return Some(video_stream);
+                    return Ok(video_stream);
                 }
                 None => {
                     log::warn!(
@@ -299,19 +330,21 @@ impl Pipeline {
         }
 
         match all_video_streams.len() {
-            0 => None,
-            1 => Some(all_video_streams[0]),
+            0 => Err(FFPipelineError::VideoInputIsRequired),
+            1 => Ok(all_video_streams[0]),
             _ => {
                 log::warn!(
                     "content contains more than one video stream; selecting stream with lowest index"
                 );
                 all_video_streams.sort_by_key(|v| v.stream_index);
-                Some(all_video_streams[0])
+                Ok(all_video_streams[0])
             }
         }
     }
 
-    fn select_audio_stream(input_settings: &InputSettings) -> Option<&ProbeResultAudioStream> {
+    fn select_audio_stream(
+        input_settings: &InputSettings,
+    ) -> Result<&ProbeResultAudioStream, FFPipelineError> {
         let mut all_audio_streams: Vec<&ProbeResultAudioStream> = input_settings
             .input
             .probe_result
@@ -330,7 +363,7 @@ impl Pipeline {
 
             match matched_stream {
                 Some(audio_stream) => {
-                    return Some(audio_stream);
+                    return Ok(audio_stream);
                 }
                 None => {
                     log::warn!(
@@ -342,14 +375,14 @@ impl Pipeline {
         }
 
         match all_audio_streams.len() {
-            0 => None,
-            1 => Some(all_audio_streams[0]),
+            0 => Err(FFPipelineError::AudioInputIsRequired),
+            1 => Ok(all_audio_streams[0]),
             _ => {
                 log::warn!(
                     "content contains more than one audio stream; selecting stream with greatest number of channels"
                 );
                 all_audio_streams.sort_by_key(|a| std::cmp::Reverse(a.channels));
-                Some(all_audio_streams[0])
+                Ok(all_audio_streams[0])
             }
         }
     }
@@ -365,5 +398,5 @@ pub fn generate_pipeline(
     input_settings: InputSettings,
     output_settings: OutputSettings,
 ) -> Result<Pipeline, FFPipelineError> {
-    Ok(Pipeline::full(input_settings, output_settings))
+    Pipeline::full(input_settings, output_settings)
 }

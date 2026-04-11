@@ -3,8 +3,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::config::ChannelConfig;
+use crate::error::ChannelError;
+use crate::playlist_manager::PlaylistManager;
+use crate::playout_loader::PlayoutLoader;
+use crate::pts_scanner::{PtsScanner, PtsTime};
 use ersatztv_core::{READY_FILE_NAME, empty_folder};
 use ersatztv_playout::playout::{PlayoutItemSource, TrackSelection};
+use ffpipeline::frame_size::FrameSize;
 use ffpipeline::hardware_accel::HardwareAccel;
 use ffpipeline::input::{InputSettings, ProbedInput};
 use ffpipeline::output_settings::OutputSettings;
@@ -13,12 +19,6 @@ use ffpipeline::{pipeline, probe};
 use simple_expand_tilde::expand_tilde;
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
-
-use crate::config::ChannelConfig;
-use crate::error::ChannelError;
-use crate::playlist_manager::PlaylistManager;
-use crate::playout_loader::PlayoutLoader;
-use crate::pts_scanner::{PtsScanner, PtsTime};
 
 #[derive(Copy, Clone, PartialEq)]
 enum ChannelSessionState {
@@ -263,6 +263,11 @@ impl ChannelSession {
         let audio_norm = &self.channel_config.normalization.audio;
         let video_norm = &self.channel_config.normalization.video;
 
+        let video_size = match (video_norm.width, video_norm.height) {
+            (Some(width), Some(height)) => Some(FrameSize { width, height }),
+            _ => None,
+        };
+
         // generate pipeline
         let output_settings = OutputSettings {
             audio_format: audio_norm.format.clone().map(AudioFormat::from),
@@ -272,6 +277,7 @@ impl ChannelSession {
             video_format: video_norm.format.clone().map(VideoFormat::from),
             video_bitrate: video_norm.bitrate_kbps.map(Kbps),
             video_buffer: video_norm.buffer_kbps.map(Kbps),
+            video_size,
             accel: video_norm.accel.clone().map(HardwareAccel::from),
             format: ffpipeline::output_format::OutputFormat::Hls {
                 playlist: self.output_file.clone(),

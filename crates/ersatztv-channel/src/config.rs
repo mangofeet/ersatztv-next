@@ -58,6 +58,8 @@ impl From<AudioFormat> for ffpipeline::pipeline::AudioFormat {
 #[derive(Deserialize, Clone)]
 pub struct VideoNormalizationConfig {
     pub format: Option<VideoFormat>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
     pub bitrate_kbps: Option<u32>,
     pub buffer_kbps: Option<u32>,
     pub accel: Option<HardwareAccel>,

@@ -1,3 +1,4 @@
+use crate::frame_size::FrameSize;
 use crate::hardware_accel::HardwareAccel;
 use crate::output_format::OutputFormat;
 use crate::pipeline::{AudioFormat, Kbps, PtsOffset, VideoFormat};
@@ -11,6 +12,7 @@ pub struct OutputSettings {
     pub video_format: Option<VideoFormat>,
     pub video_bitrate: Option<Kbps>,
     pub video_buffer: Option<Kbps>,
+    pub video_size: Option<FrameSize>,
     pub accel: Option<HardwareAccel>,
     pub format: OutputFormat,
     pub pts_offset: Option<PtsOffset>,

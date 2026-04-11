@@ -10,4 +10,6 @@ pub struct ProbedInput {
     pub probe_result: ProbeResult,
     pub in_point: Duration,
     pub out_point: Duration,
+    pub audio_index: Option<u32>,
+    pub video_index: Option<u32>,
 }

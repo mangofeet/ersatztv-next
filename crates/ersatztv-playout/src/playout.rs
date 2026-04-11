@@ -71,19 +71,15 @@ impl PlayoutItem {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PlayoutItemTracks {
-    pub audio: Option<PlayoutItemAudioTrack>,
-    pub video: Option<PlayoutItemVideoTrack>,
+    pub audio: Option<TrackSelection>,
+    pub video: Option<TrackSelection>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct PlayoutItemAudioTrack {
-    pub source: Option<PlayoutItemSource>,
-    pub stream_index: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PlayoutItemVideoTrack {
-    pub source: PlayoutItemSource,
+#[serde(untagged)]
+pub enum TrackSelection {
+    Source { source: PlayoutItemSource },
+    StreamIndex { stream_index: u32 },
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

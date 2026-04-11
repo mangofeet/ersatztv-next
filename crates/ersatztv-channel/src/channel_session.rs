@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ersatztv_core::{READY_FILE_NAME, empty_folder};
-use ersatztv_playout::playout::PlayoutItemSource;
+use ersatztv_playout::playout::{PlayoutItemSource, TrackSelection};
 use ffpipeline::hardware_accel::HardwareAccel;
 use ffpipeline::input::{InputSettings, ProbedInput};
 use ffpipeline::output_settings::OutputSettings;
@@ -329,11 +329,31 @@ impl ChannelSession {
             is_complete = false;
         }
 
+        let video_index = current_item
+            .tracks
+            .as_ref()
+            .and_then(|t| t.video.as_ref())
+            .and_then(|v| match v {
+                TrackSelection::StreamIndex { stream_index } => Some(*stream_index),
+                _ => None,
+            });
+
+        let audio_index = current_item
+            .tracks
+            .as_ref()
+            .and_then(|t| t.audio.as_ref())
+            .and_then(|a| match a {
+                TrackSelection::StreamIndex { stream_index } => Some(*stream_index),
+                _ => None,
+            });
+
         let input_settings = InputSettings {
             input: ProbedInput {
                 in_point: effective_in_point,
                 out_point,
                 probe_result,
+                audio_index,
+                video_index,
             },
         };
 

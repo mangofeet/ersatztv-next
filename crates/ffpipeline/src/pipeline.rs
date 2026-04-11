@@ -269,15 +269,46 @@ impl Pipeline {
     }
 
     fn select_video_stream(input_settings: &InputSettings) -> Option<&ProbeResultVideoStream> {
-        input_settings
+        let mut all_video_streams: Vec<&ProbeResultVideoStream> = input_settings
             .input
             .probe_result
             .streams
             .iter()
-            .find_map(|s| match s {
+            .filter_map(|s| match s {
                 ProbeResultStream::Video(video_stream) => Some(video_stream),
                 _ => None,
             })
+            .collect();
+
+        if let Some(video_index) = input_settings.input.video_index {
+            let matched_stream = all_video_streams
+                .iter()
+                .find(|v| v.stream_index == video_index);
+
+            match matched_stream {
+                Some(video_stream) => {
+                    return Some(video_stream);
+                }
+                None => {
+                    log::warn!(
+                        "unable to locate requested video stream with index {}",
+                        video_index
+                    );
+                }
+            }
+        }
+
+        match all_video_streams.len() {
+            0 => None,
+            1 => Some(all_video_streams[0]),
+            _ => {
+                log::warn!(
+                    "content contains more than one video stream; selecting stream with lowest index"
+                );
+                all_video_streams.sort_by_key(|v| v.stream_index);
+                Some(all_video_streams[0])
+            }
+        }
     }
 
     fn select_audio_stream(input_settings: &InputSettings) -> Option<&ProbeResultAudioStream> {
@@ -292,17 +323,34 @@ impl Pipeline {
             })
             .collect();
 
-        // TODO: check for track selection from playout
+        if let Some(audio_index) = input_settings.input.audio_index {
+            let matched_stream = all_audio_streams
+                .iter()
+                .find(|a| a.stream_index == audio_index);
+
+            match matched_stream {
+                Some(audio_stream) => {
+                    return Some(audio_stream);
+                }
+                None => {
+                    log::warn!(
+                        "unable to locate requested audio stream with index {}",
+                        audio_index
+                    );
+                }
+            }
+        }
+
         match all_audio_streams.len() {
-            1 => {
+            0 => None,
+            1 => Some(all_audio_streams[0]),
+            _ => {
                 log::warn!(
                     "content contains more than one audio stream; selecting stream with greatest number of channels"
                 );
                 all_audio_streams.sort_by_key(|a| std::cmp::Reverse(a.channels));
                 Some(all_audio_streams[0])
             }
-            0 => Some(all_audio_streams[0]),
-            _ => None,
         }
     }
 }

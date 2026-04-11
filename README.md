@@ -27,7 +27,8 @@ Finally, there are configuration examples under [examples](examples):
 - [channel.toml](examples/channel.toml): an example channel configuration, linking a channel to its playout JSON files, and describing how to normalize the content.
 - [lineup.toml](examples/lineup.toml): an example lineup configuration, linking to all channels, and describing where to write the normalized content and how to serve it over HTTP.
 
-Notably, library and metadata management, scheduling and playout creation **are not in scope for this project**.
+> [!IMPORTANT]
+> Library and metadata management, scheduling and playout creation **are not in scope for this project**.
 
 ## Getting Started
 

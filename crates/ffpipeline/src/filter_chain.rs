@@ -25,7 +25,8 @@ impl FilterChain {
     }
 
     pub(crate) fn disable_video(&mut self) {
-        self.filters.retain(|f| !matches!(f, PipelineFilter::Video(_)));
+        self.filters
+            .retain(|f| !matches!(f, PipelineFilter::Video(_)));
     }
 
     pub(crate) fn optimize(&mut self, initial_state: &FrameState) {

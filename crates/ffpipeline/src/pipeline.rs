@@ -50,6 +50,9 @@ pub(crate) struct OutputContext {
 #[derive(Clone)]
 pub(crate) struct FrameState {
     pub(crate) size: FrameSize,
+    pub(crate) is_anamorphic: bool,
+    pub(crate) sample_aspect_ratio: Option<String>,
+    pub(crate) display_aspect_ratio: Option<String>,
 }
 
 pub enum PipelineInput {
@@ -121,6 +124,9 @@ impl Pipeline {
                 width: video_stream.width,
                 height: video_stream.height,
             },
+            is_anamorphic: Self::is_anamorphic(video_stream),
+            sample_aspect_ratio: video_stream.sample_aspect_ratio.to_owned(),
+            display_aspect_ratio: video_stream.display_aspect_ratio.to_owned(),
         };
 
         let initial_scaled_size = output_settings
@@ -384,6 +390,38 @@ impl Pipeline {
                 all_audio_streams.sort_by_key(|a| std::cmp::Reverse(a.channels));
                 Ok(all_audio_streams[0])
             }
+        }
+    }
+
+    fn is_anamorphic(video_stream: &ProbeResultVideoStream) -> bool {
+        // TODO: need to calculate SAR when it's not provided; port MediaStream::SampleAspectRatio
+
+        match &video_stream.sample_aspect_ratio {
+            Some(sample_aspect_ratio) => {
+                let display_aspect_ratio = video_stream
+                    .display_aspect_ratio
+                    .as_ref()
+                    .map(|dar| dar.as_ref())
+                    .unwrap_or("");
+
+                // square pixels
+                if sample_aspect_ratio == "1:1" {
+                    false
+                }
+                // 0:1 is "unspecified", so anything other than that will be non-square/anamorphic
+                else if sample_aspect_ratio != "0:1" {
+                    true
+                }
+                // SAR 0:1 && DAR 0:1 (both unspecified) means square pixels
+                else if display_aspect_ratio == "0:1" {
+                    false
+                } else {
+                    // DAR == W:H is square
+                    display_aspect_ratio
+                        != format!("{}:{}", video_stream.width, video_stream.height)
+                }
+            }
+            None => false, // assumed SAR of 1:1
         }
     }
 }

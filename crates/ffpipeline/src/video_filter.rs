@@ -19,7 +19,12 @@ impl VideoFilter {
                         VideoFilter::Scale {
                             size: Some(actual.clone()),
                         },
-                        FrameState { size: actual },
+                        FrameState {
+                            size: actual,
+                            is_anamorphic: false,
+                            sample_aspect_ratio: Some(String::from("1:1")),
+                            display_aspect_ratio: None,
+                        },
                     ))
                 }
             }
@@ -33,6 +38,9 @@ impl VideoFilter {
                         self.clone(),
                         FrameState {
                             size: target.clone(),
+                            is_anamorphic: false,
+                            sample_aspect_ratio: Some(String::from("1:1")),
+                            display_aspect_ratio: None,
                         },
                     ))
                 }

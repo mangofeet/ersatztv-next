@@ -1,4 +1,5 @@
 pub mod audio_codec;
+pub mod audio_filter;
 pub mod error;
 pub mod filter_chain;
 pub mod frame_rate;

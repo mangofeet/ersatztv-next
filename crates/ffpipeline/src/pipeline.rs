@@ -3,6 +3,7 @@ use std::fmt::Formatter;
 use std::time::Duration;
 
 use crate::audio_codec::AudioCodec;
+use crate::audio_filter::AudioFilter;
 use crate::error::FFPipelineError;
 use crate::filter_chain::{FilterChain, PipelineFilter};
 use crate::frame_rate::FrameRate;
@@ -166,6 +167,8 @@ impl Pipeline {
                 },
             ],
             filter_chain: FilterChain::new(vec![
+                PipelineFilter::Audio(AudioFilter::Resample),
+                PipelineFilter::Audio(AudioFilter::Pad),
                 PipelineFilter::Video(VideoFilter::Scale {
                     size: initial_scaled_size,
                 }),
@@ -204,6 +207,8 @@ impl Pipeline {
                         | OutputOption::AudioChannels(_)
                 )
             });
+
+            self.filter_chain.disable_audio();
         };
 
         // remove audio channels output option if input channel count matches

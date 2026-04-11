@@ -1,8 +1,10 @@
+use crate::audio_filter::AudioFilter;
 use crate::pipeline::FrameState;
 use crate::video_filter::VideoFilter;
 
 #[derive(Clone)]
 pub(crate) enum PipelineFilter {
+    Audio(AudioFilter),
     Video(VideoFilter),
 }
 
@@ -24,6 +26,11 @@ impl FilterChain {
         }
     }
 
+    pub(crate) fn disable_audio(&mut self) {
+        self.filters
+            .retain(|f| !matches!(f, PipelineFilter::Audio(_)));
+    }
+
     pub(crate) fn disable_video(&mut self) {
         self.filters
             .retain(|f| !matches!(f, PipelineFilter::Video(_)));
@@ -36,10 +43,16 @@ impl FilterChain {
 
         for filter in &self.filters {
             match filter {
+                PipelineFilter::Audio(af) => {
+                    if let Some((new_filter, new_state)) = af.evaluate(&state) {
+                        state = new_state;
+                        active_filters.push(PipelineFilter::Audio(new_filter));
+                    }
+                }
                 PipelineFilter::Video(vf) => {
                     if let Some((new_filter, new_state)) = vf.evaluate(&state) {
                         state = new_state;
-                        active_filters.push(PipelineFilter::Video(new_filter))
+                        active_filters.push(PipelineFilter::Video(new_filter));
                     }
                 }
             }
@@ -52,7 +65,38 @@ impl FilterChain {
         self.audio_label = audio_label.to_owned();
         self.video_label = video_label.to_owned();
 
+        let mut filter_chains: Vec<String> = Vec::new();
+
         // build filter chain
+        let audio_filter_count = self
+            .filters
+            .iter()
+            .filter(|f| matches!(f, PipelineFilter::Audio(_)))
+            .count();
+
+        if audio_filter_count > 0 {
+            let mut filter_chain = String::new();
+
+            filter_chain.push_str(&format!("[{}]", self.audio_label));
+
+            let mut audio_chain: Vec<String> = Vec::new();
+
+            for filter in self.filters.iter() {
+                if let PipelineFilter::Audio(audio_filter) = filter
+                    && let Some(arg) = audio_filter.as_arg()
+                {
+                    audio_chain.push(arg)
+                }
+            }
+
+            filter_chain.push_str(&audio_chain.join(","));
+
+            self.audio_label = String::from("[a]");
+            filter_chain.push_str(&self.audio_label);
+
+            filter_chains.push(filter_chain);
+        }
+
         let video_filter_count = self
             .filters
             .iter()
@@ -60,26 +104,29 @@ impl FilterChain {
             .count();
 
         if video_filter_count > 0 {
-            self.complex_filter
-                .push_str(&format!("[{}]", self.video_label));
+            let mut filter_chain = String::new();
+
+            filter_chain.push_str(&format!("[{}]", self.video_label));
 
             let mut video_chain: Vec<String> = Vec::new();
 
             for filter in self.filters.iter() {
-                match filter {
-                    PipelineFilter::Video(video_filter) => {
-                        if let Some(arg) = video_filter.as_arg() {
-                            video_chain.push(arg);
-                        }
-                    }
+                if let PipelineFilter::Video(video_filter) = filter
+                    && let Some(arg) = video_filter.as_arg()
+                {
+                    video_chain.push(arg);
                 }
             }
 
-            self.complex_filter.push_str(&video_chain.join(","));
+            filter_chain.push_str(&video_chain.join(","));
 
             self.video_label = String::from("[v]");
-            self.complex_filter.push_str(&self.video_label);
+            filter_chain.push_str(&self.video_label);
+
+            filter_chains.push(filter_chain)
         }
+
+        self.complex_filter = filter_chains.join(";");
     }
 
     pub(crate) fn audio_label(&self) -> &str {

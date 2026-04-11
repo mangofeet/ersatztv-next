@@ -9,6 +9,9 @@ ErsatzTV is a modular, self-hosted IPTV server that transcodes and streams your 
 
 This rewrite focuses on a "one thing well" philosophy: **reliable transcoding and streaming**.
 
+> [!IMPORTANT]
+> Library and metadata management, scheduling and playout creation **are not in scope for this project**.
+
 Unlike [the legacy version](https://github.com/ErsatzTV/ErsatzTV-legacy), this version is decoupled from library management and scheduling. It consumes **playouts** (JSON documents describing what to play and when) and handles the heavy lifting of keeping a stream alive and consistent, regardless of source media variations.
 
 ## Contents
@@ -26,9 +29,6 @@ Finally, there are configuration examples under [examples](examples):
 - [playout.json](examples/playout/playout.json): an example playout JSON file, demonstrating some of the possible fields.
 - [channel.toml](examples/channel.toml): an example channel configuration, linking a channel to its playout JSON files, and describing how to normalize the content.
 - [lineup.toml](examples/lineup.toml): an example lineup configuration, linking to all channels, and describing where to write the normalized content and how to serve it over HTTP.
-
-> [!IMPORTANT]
-> Library and metadata management, scheduling and playout creation **are not in scope for this project**.
 
 ## Getting Started
 

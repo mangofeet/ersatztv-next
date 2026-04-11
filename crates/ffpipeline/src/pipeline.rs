@@ -194,8 +194,6 @@ impl Pipeline {
     }
 
     pub fn optimize(&mut self) {
-        self.filter_chain.optimize(&self.initial_state);
-
         // audio copy shouldn't have bitrate etc
         if self.output_context.audio_codec == AudioCodec::Copy {
             self.output_options.retain(|o| {
@@ -229,7 +227,11 @@ impl Pipeline {
                     OutputOption::VideoBitrate(_) | OutputOption::VideoBuffer(_)
                 )
             });
+
+            self.filter_chain.disable_video();
         }
+
+        self.filter_chain.optimize(&self.initial_state);
     }
 
     pub fn args(&self) -> Vec<String> {

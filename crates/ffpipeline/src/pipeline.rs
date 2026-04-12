@@ -155,7 +155,7 @@ impl Pipeline {
         };
 
         Ok(Pipeline {
-            initial_state,
+            initial_state: initial_state.clone(),
             global_options: vec![
                 GlobalOption::Threads(0),
                 GlobalOption::NoStdIn,
@@ -190,6 +190,8 @@ impl Pipeline {
                 }),
                 PipelineFilter::Video(VideoFilter::Scale {
                     size: initial_scaled_size,
+                    input_is_anamorphic: initial_state.is_anamorphic,
+                    force_original_aspect_ratio: None,
                 }),
                 PipelineFilter::Video(VideoFilter::Pad {
                     size: output_settings.video_size.to_owned(),

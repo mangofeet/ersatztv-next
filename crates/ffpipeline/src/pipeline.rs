@@ -5,6 +5,7 @@ use crate::audio_codec::AudioCodec;
 use crate::audio_decoder::AudioDecoder;
 use crate::audio_filter::AudioFilter;
 use crate::error::FFPipelineError;
+use crate::ffmpeg_info::FfmpegInfo;
 use crate::filter_chain::{FilterChain, PipelineFilter};
 use crate::frame_rate::FrameRate;
 use crate::frame_size::FrameSize;
@@ -150,9 +151,21 @@ pub struct Pipeline {
 
 impl Pipeline {
     fn full(
+        ffmpeg_info: FfmpegInfo,
         input_settings: InputSettings,
         output_settings: OutputSettings,
     ) -> Result<Pipeline, FFPipelineError> {
+        let mut final_output_settings = output_settings;
+
+        log::debug!("ffmpeg info: {:?}", ffmpeg_info);
+
+        if let Some(accel) = final_output_settings.accel
+            && !ffmpeg_info.has_hw_accel(&accel)
+        {
+            log::warn!("ffmpeg does not support requested accel {:?}", accel);
+            final_output_settings.accel = None;
+        }
+
         let duration = std::cmp::min(
             input_settings.audio_input.out_point - input_settings.audio_input.in_point,
             input_settings.video_input.out_point - input_settings.video_input.in_point,
@@ -160,13 +173,16 @@ impl Pipeline {
 
         log::debug!("duration is {:?}", duration);
 
-        let audio_codec = match output_settings.audio_format {
+        let audio_codec = match final_output_settings.audio_format {
             Some(AudioFormat::Aac) => AudioCodec::Aac,
             Some(AudioFormat::Ac3) => AudioCodec::Ac3,
             _ => AudioCodec::Copy,
         };
 
-        let video_codec = match (output_settings.accel, output_settings.video_format) {
+        let video_codec = match (
+            final_output_settings.accel,
+            final_output_settings.video_format,
+        ) {
             (Some(HardwareAccel::Cuda), Some(VideoFormat::H264)) => VideoCodec::H264Nvenc,
             (Some(HardwareAccel::Cuda), Some(VideoFormat::Hevc)) => VideoCodec::HevcNvenc,
             (Some(HardwareAccel::Qsv), Some(VideoFormat::H264)) => VideoCodec::H264Qsv,
@@ -182,13 +198,13 @@ impl Pipeline {
             _ => VideoCodec::Copy,
         };
 
-        let output_path = output_settings.format.path();
+        let output_path = final_output_settings.format.path();
 
         let video_stream = Self::select_video_stream(&input_settings)?;
         let audio_stream = Self::select_audio_stream(&input_settings)?;
 
         let is_still_image = input_settings.video_input.probe_result.is_still_image();
-        let video_decoder = VideoDecoder::new(video_stream, is_still_image, &output_settings);
+        let video_decoder = VideoDecoder::new(video_stream, is_still_image, &final_output_settings);
 
         let initial_state = FrameState {
             size: FrameSize {
@@ -203,18 +219,18 @@ impl Pipeline {
                 .output_format(&PixelFormat::parse(video_stream.pix_fmt.as_str())),
         };
 
-        let initial_scaled_size = output_settings
+        let initial_scaled_size = final_output_settings
             .video_size
             .as_ref()
             .map(|s| s.square_pixel_size(&initial_state));
 
         let output_context = OutputContext {
             audio_codec,
-            audio_channels: output_settings.audio_channels,
+            audio_channels: final_output_settings.audio_channels,
             video_codec,
-            pts_offset: output_settings.pts_offset,
+            pts_offset: final_output_settings.pts_offset,
             media_frame_rate: video_stream.frame_rate.to_owned(),
-            preferred_surface: match output_settings.accel {
+            preferred_surface: match final_output_settings.accel {
                 Some(HardwareAccel::Cuda) => FrameSurface::Cuda,
                 // TODO: proper surfaces for other accels
                 _ => FrameSurface::System,
@@ -224,10 +240,10 @@ impl Pipeline {
         };
 
         Ok(Pipeline {
-            accel: output_settings.accel,
+            accel: final_output_settings.accel,
             initial_state: initial_state.clone(),
             global_options: vec![
-                GlobalOption::Threads(match output_settings.accel {
+                GlobalOption::Threads(match final_output_settings.accel {
                     Some(HardwareAccel::Cuda) => 1,
                     _ => 0,
                 }),
@@ -243,14 +259,14 @@ impl Pipeline {
                     path: input_settings.audio_input.probe_result.path.to_owned(),
                     seek: input_settings.audio_input.in_point,
                     channels: audio_stream.channels,
-                    decoder: AudioDecoder::new(audio_stream, &output_settings),
+                    decoder: AudioDecoder::new(audio_stream, &final_output_settings),
                 },
                 PipelineInput::Video {
                     input_source: input_settings.video_input.input_source.to_owned(),
                     index: video_stream.stream_index,
                     path: input_settings.video_input.probe_result.path.to_owned(),
                     seek: input_settings.video_input.in_point,
-                    realtime: output_settings.realtime,
+                    realtime: final_output_settings.realtime,
                     decoder: video_decoder,
                 },
             ],
@@ -269,7 +285,7 @@ impl Pipeline {
                     force_original_aspect_ratio: None,
                 }),
                 PipelineFilter::Video(VideoFilter::Pad {
-                    size: output_settings.video_size.to_owned(),
+                    size: final_output_settings.video_size.to_owned(),
                 }),
             ]),
             output_options: vec![
@@ -277,17 +293,17 @@ impl Pipeline {
                 OutputOption::MovFlagsFastStart,
                 OutputOption::CudaNoAutoScale,
                 OutputOption::AudioCodec(audio_codec),
-                OutputOption::AudioBitrate(output_settings.audio_bitrate),
-                OutputOption::AudioBuffer(output_settings.audio_buffer),
-                OutputOption::AudioChannels(output_settings.audio_channels),
+                OutputOption::AudioBitrate(final_output_settings.audio_bitrate),
+                OutputOption::AudioBuffer(final_output_settings.audio_buffer),
+                OutputOption::AudioChannels(final_output_settings.audio_channels),
                 OutputOption::VideoCodec(video_codec),
-                OutputOption::VideoBitrate(output_settings.video_bitrate),
-                OutputOption::VideoBuffer(output_settings.video_buffer),
+                OutputOption::VideoBitrate(final_output_settings.video_bitrate),
+                OutputOption::VideoBuffer(final_output_settings.video_buffer),
                 OutputOption::DoNotMapMetadata,
-                OutputOption::Format(output_settings.format),
+                OutputOption::Format(final_output_settings.format),
                 OutputOption::Duration(duration),
-                OutputOption::TsOffset(output_settings.pts_offset),
-                OutputOption::FrameRate(output_settings.frame_rate),
+                OutputOption::TsOffset(final_output_settings.pts_offset),
+                OutputOption::FrameRate(final_output_settings.frame_rate),
             ],
             output: PipelineOutput { path: output_path },
             output_context,
@@ -605,8 +621,9 @@ impl std::fmt::Display for Pipeline {
 }
 
 pub fn generate_pipeline(
+    ffmpeg_info: FfmpegInfo,
     input_settings: InputSettings,
     output_settings: OutputSettings,
 ) -> Result<Pipeline, FFPipelineError> {
-    Pipeline::full(input_settings, output_settings)
+    Pipeline::full(ffmpeg_info, input_settings, output_settings)
 }

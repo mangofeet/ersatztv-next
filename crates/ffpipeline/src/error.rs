@@ -2,6 +2,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum FFPipelineError {
+    #[error("error detecting ffmpeg capabilities: {0}")]
+    FfmpegCapabilitiesError(String),
     #[error("ffprobe failed")]
     ProbeFailed,
     #[error("failed to parse ffprobe output")]

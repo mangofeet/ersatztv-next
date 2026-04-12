@@ -382,7 +382,9 @@ impl ChannelSession {
             },
         };
 
-        let mut pipeline_result = pipeline::generate_pipeline(input_settings, output_settings)?;
+        let ffmpeg_info = ffpipeline::ffmpeg_info::FfmpegInfo::load("ffmpeg").await?;
+        let mut pipeline_result =
+            pipeline::generate_pipeline(ffmpeg_info, input_settings, output_settings)?;
         pipeline_result.optimize();
         let args = pipeline_result.args();
         log::debug!("optimized pipeline: {}", args.join(" "));

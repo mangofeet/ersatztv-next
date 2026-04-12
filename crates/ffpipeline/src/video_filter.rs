@@ -33,9 +33,8 @@ pub enum VideoFilter {
 }
 
 impl VideoFilter {
-    /// Determines whether the filter is needed given the input frame state. If so, the filter
-    /// and its output frame state will be returned.
-    pub(crate) fn evaluate(&self, state: &FrameState) -> Option<(VideoFilter, FrameState)> {
+    /// Determines whether the filter is needed given the input frame state.
+    pub(crate) fn evaluate(&self, state: &FrameState) -> Option<VideoFilter> {
         match self {
             // hardware filters aren't present at the point where this is called
             VideoFilter::HwUpload { .. } => None,
@@ -55,21 +54,11 @@ impl VideoFilter {
                         Some(ForceOriginalAspectRatio::Decrease)
                     };
 
-                    Some((
-                        VideoFilter::Scale {
-                            size: Some(actual.clone()),
-                            input_is_anamorphic: state.is_anamorphic,
-                            force_original_aspect_ratio,
-                        },
-                        FrameState {
-                            size: actual,
-                            is_anamorphic: false,
-                            is_still_image: false,
-                            sample_aspect_ratio: Some(String::from("1:1")),
-                            display_aspect_ratio: None,
-                            surface: FrameSurface::System,
-                        },
-                    ))
+                    Some(VideoFilter::Scale {
+                        size: Some(actual.clone()),
+                        input_is_anamorphic: state.is_anamorphic,
+                        force_original_aspect_ratio,
+                    })
                 }
             }
             VideoFilter::Scale { size: None, .. } => None,
@@ -77,23 +66,43 @@ impl VideoFilter {
                 if state.size == *target {
                     None
                 } else {
-                    // pad will always result in the proper dimensions
-                    Some((
-                        self.clone(),
-                        FrameState {
-                            size: target.clone(),
-                            is_anamorphic: false,
-                            is_still_image: false,
-                            sample_aspect_ratio: Some(String::from("1:1")),
-                            display_aspect_ratio: None,
-                            surface: FrameSurface::System,
-                        },
-                    ))
+                    Some(self.clone())
                 }
             }
             VideoFilter::Pad { size: None } => None,
-            VideoFilter::Loop { codec } if codec == "png" => Some((self.clone(), state.clone())),
+            VideoFilter::Loop { codec } if codec == "png" => Some(self.clone()),
             VideoFilter::Loop { .. } => None,
+        }
+    }
+
+    pub(crate) fn apply_to(&self, state: &mut FrameState) {
+        match self {
+            VideoFilter::HwUpload { target_surface } => {
+                state.surface = target_surface.clone();
+            }
+            VideoFilter::HwDownload => {
+                state.surface = FrameSurface::System;
+            }
+            VideoFilter::Scale {
+                size: Some(size), ..
+            } => {
+                state.size = size.clone();
+                state.is_anamorphic = false;
+                state.sample_aspect_ratio = Some(String::from("1:1"));
+                state.display_aspect_ratio = None;
+            }
+            VideoFilter::Pad { size: Some(size) } => {
+                state.size = size.clone();
+                state.surface = FrameSurface::System;
+            }
+            VideoFilter::ScaleCuda {
+                size: Some(size), ..
+            } => {
+                state.size = size.clone();
+                state.surface = FrameSurface::Cuda;
+                // TODO: anamorphic handling
+            }
+            _ => {}
         }
     }
 
@@ -115,13 +124,6 @@ impl VideoFilter {
             VideoFilter::Loop { .. } => Some(FrameSurface::System),
 
             VideoFilter::ScaleCuda { .. } => Some(FrameSurface::Cuda),
-        }
-    }
-
-    pub(crate) fn output_surface(&self) -> FrameSurface {
-        match self {
-            VideoFilter::ScaleCuda { .. } => FrameSurface::Cuda,
-            _ => FrameSurface::System,
         }
     }
 

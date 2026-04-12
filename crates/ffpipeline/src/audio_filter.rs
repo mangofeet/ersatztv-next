@@ -9,9 +9,11 @@ pub enum AudioFilter {
 impl AudioFilter {
     /// Determines whether the filter is needed given the input frame state. If so, the filter
     /// and its output frame state will be returned.
-    pub(crate) fn evaluate(&self, state: &FrameState) -> Option<(AudioFilter, FrameState)> {
-        Some((self.clone(), state.clone()))
+    pub(crate) fn evaluate(&self, _state: &FrameState) -> Option<AudioFilter> {
+        Some(self.clone())
     }
+
+    pub(crate) fn apply_to(&self, _state: &mut FrameState) {}
 
     pub(crate) fn as_arg(&self) -> Option<String> {
         match self {

@@ -291,7 +291,7 @@ impl Pipeline {
         self.filter_chain.evaluate(&self.initial_state);
         self.filter_chain.resolve(
             self.accel,
-            &self.initial_state.surface,
+            &self.initial_state,
             &self.output_context.preferred_surface,
         );
     }

@@ -48,14 +48,14 @@ impl FilterChain {
         for filter in &self.filters {
             match filter {
                 PipelineFilter::Audio(af) => {
-                    if let Some((new_filter, new_state)) = af.evaluate(&state) {
-                        state = new_state;
+                    if let Some(new_filter) = af.evaluate(&state) {
+                        new_filter.apply_to(&mut state);
                         active_filters.push(PipelineFilter::Audio(new_filter));
                     }
                 }
                 PipelineFilter::Video(vf) => {
-                    if let Some((new_filter, new_state)) = vf.evaluate(&state) {
-                        state = new_state;
+                    if let Some(new_filter) = vf.evaluate(&state) {
+                        new_filter.apply_to(&mut state);
                         active_filters.push(PipelineFilter::Video(new_filter));
                     }
                 }
@@ -68,41 +68,42 @@ impl FilterChain {
     pub(crate) fn resolve(
         &mut self,
         accel: Option<HardwareAccel>,
-        initial_surface: &FrameSurface,
+        initial_state: &FrameState,
         encoder_surface: &FrameSurface,
     ) {
         let mut resolved = Vec::new();
-        let mut current_surface = initial_surface.clone();
+        let mut current_state = initial_state.clone();
 
         for filter in &self.filters {
-            if let PipelineFilter::Video(video_filter) = filter {
-                let best = video_filter.best_for(accel);
+            match filter {
+                PipelineFilter::Video(video_filter) => {
+                    let best = video_filter.best_for(accel);
 
-                if let Some(required) = best.required_surface()
-                    && current_surface != required
-                {
-                    if required == FrameSurface::System {
-                        resolved.push(PipelineFilter::Video(VideoFilter::HwDownload));
-                    } else {
-                        resolved.push(PipelineFilter::Video(VideoFilter::HwUpload {
-                            target_surface: required.clone(),
-                        }))
+                    if let Some(required) = best.required_surface()
+                        && current_state.surface != required
+                    {
+                        if required == FrameSurface::System {
+                            resolved.push(PipelineFilter::Video(VideoFilter::HwDownload));
+                        } else {
+                            resolved.push(PipelineFilter::Video(VideoFilter::HwUpload {
+                                target_surface: required.clone(),
+                            }))
+                        }
                     }
-                }
 
-                current_surface = best.output_surface();
-                resolved.push(PipelineFilter::Video(best));
-            } else {
-                resolved.push(filter.clone());
+                    best.apply_to(&mut current_state);
+                    resolved.push(PipelineFilter::Video(best));
+                }
+                PipelineFilter::Audio(_) => {
+                    // not sure if we should actually apply audio filters to the state
+                    // since they are separate in the real filter graph
+                    //audio_filter.apply_to(&mut current_state);
+                    resolved.push(filter.clone());
+                }
             }
         }
 
-        if current_surface != *encoder_surface {
-            log::debug!(
-                "current surface ({:?}) != encoder surface ({:?})",
-                current_surface,
-                *encoder_surface
-            );
+        if current_state.surface != *encoder_surface {
             if *encoder_surface == FrameSurface::System {
                 resolved.push(PipelineFilter::Video(VideoFilter::HwDownload));
             } else {

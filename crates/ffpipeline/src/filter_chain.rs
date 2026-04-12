@@ -1,6 +1,5 @@
 use crate::audio_filter::AudioFilter;
-use crate::hardware_accel::HardwareAccel;
-use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
+use crate::pipeline::{FrameState, FrameSurface, HardwareAccel, PixelFormat};
 use crate::video_filter::VideoFilter;
 
 #[derive(Clone)]
@@ -11,7 +10,7 @@ pub(crate) enum PipelineFilter {
 
 #[derive(Clone)]
 pub(crate) struct FilterChain {
-    filters: Vec<PipelineFilter>,
+    pub(crate) filters: Vec<PipelineFilter>,
     audio_label: String,
     video_label: String,
     complex_filter: String,
@@ -70,6 +69,7 @@ impl FilterChain {
         accel: Option<HardwareAccel>,
         initial_state: &FrameState,
         encoder_surface: &FrameSurface,
+        encoder_pixel_format: &Option<PixelFormat>,
     ) {
         let mut resolved = Vec::new();
         let mut current_state = initial_state.clone();
@@ -124,6 +124,21 @@ impl FilterChain {
                 resolved.push(PipelineFilter::Video(VideoFilter::HwUpload {
                     target_surface: encoder_surface.clone(),
                 }));
+            }
+        }
+
+        if let Some(pixel_format) = encoder_pixel_format
+            && current_state.pixel_format != *pixel_format
+        {
+            match current_state.surface {
+                FrameSurface::Cuda => {
+                    resolved.push(PipelineFilter::Video(VideoFilter::FormatCuda {
+                        format: pixel_format.to_owned(),
+                    }));
+                }
+                FrameSurface::System => resolved.push(PipelineFilter::Video(VideoFilter::Format {
+                    format: pixel_format.to_owned(),
+                })),
             }
         }
 

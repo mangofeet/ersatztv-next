@@ -1,8 +1,7 @@
 use crate::frame_rate::FrameRate;
 use crate::frame_size::FrameSize;
-use crate::hardware_accel::HardwareAccel;
 use crate::output_format::OutputFormat;
-use crate::pipeline::{AudioFormat, Kbps, PtsOffset, VideoFormat};
+use crate::pipeline::{AudioFormat, HardwareAccel, Kbps, PtsOffset, VideoFormat};
 
 #[derive(Debug)]
 pub struct OutputSettings {

@@ -1,6 +1,5 @@
 use crate::frame_size::FrameSize;
-use crate::hardware_accel::HardwareAccel;
-use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
+use crate::pipeline::{FrameState, FrameSurface, HardwareAccel, PixelFormat};
 
 #[derive(Clone)]
 pub enum ForceOriginalAspectRatio {
@@ -27,8 +26,14 @@ pub enum VideoFilter {
     Loop {
         codec: String,
     },
+    Format {
+        format: PixelFormat,
+    },
     ScaleCuda {
         size: Option<FrameSize>,
+    },
+    FormatCuda {
+        format: PixelFormat,
     },
 }
 
@@ -40,6 +45,8 @@ impl VideoFilter {
             VideoFilter::HwUpload { .. } => None,
             VideoFilter::HwDownload { .. } => None,
             VideoFilter::ScaleCuda { .. } => None,
+            VideoFilter::FormatCuda { .. } => None,
+            VideoFilter::Format { .. } => None,
 
             VideoFilter::Scale {
                 size: Some(target), ..
@@ -125,8 +132,10 @@ impl VideoFilter {
             VideoFilter::Scale { .. } => Some(FrameSurface::System),
             VideoFilter::Pad { .. } => Some(FrameSurface::System),
             VideoFilter::Loop { .. } => Some(FrameSurface::System),
+            VideoFilter::Format { .. } => Some(FrameSurface::System),
 
             VideoFilter::ScaleCuda { .. } => Some(FrameSurface::Cuda),
+            VideoFilter::FormatCuda { .. } => Some(FrameSurface::Cuda),
         }
     }
 
@@ -176,12 +185,16 @@ impl VideoFilter {
             )),
             VideoFilter::Pad { .. } => None,
             VideoFilter::Loop { .. } => Some(String::from("loop=-1:1")),
+            VideoFilter::Format { format } => Some(format!("format={}", format.as_arg())),
             VideoFilter::ScaleCuda { size: Some(size) } => Some(format!(
                 // TODO: anamorphic, aspect ratio
                 "scale_cuda={}:{}",
                 size.width, size.height
             )),
             VideoFilter::ScaleCuda { .. } => None,
+            VideoFilter::FormatCuda { format } => {
+                Some(format!("scale_cuda=format={}", format.as_arg()))
+            }
         }
     }
 }

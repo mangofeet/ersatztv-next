@@ -7,10 +7,11 @@ use ersatztv_core::{READY_FILE_NAME, empty_folder};
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource, TrackSelection};
 use ffpipeline::frame_rate::FrameRate;
 use ffpipeline::frame_size::FrameSize;
-use ffpipeline::hardware_accel::HardwareAccel;
 use ffpipeline::input::{InputSettings, InputSource, ProbedInput};
 use ffpipeline::output_settings::OutputSettings;
-use ffpipeline::pipeline::{AudioFormat, Kbps, PtsOffset, SEGMENT_SECONDS, VideoFormat};
+use ffpipeline::pipeline::{
+    AudioFormat, HardwareAccel, Kbps, PtsOffset, SEGMENT_SECONDS, VideoFormat,
+};
 use ffpipeline::probe::ProbeResult;
 use ffpipeline::{pipeline, probe};
 use simple_expand_tilde::expand_tilde;

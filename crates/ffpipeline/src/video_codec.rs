@@ -1,3 +1,5 @@
+use crate::pipeline::PixelFormat;
+
 #[derive(Copy, Clone, PartialEq)]
 pub enum VideoCodec {
     Copy,
@@ -12,6 +14,17 @@ pub enum VideoCodec {
 }
 
 impl VideoCodec {
+    pub(crate) fn preferred_pixel_format(&self, bit_depth: u32) -> Option<PixelFormat> {
+        match self {
+            VideoCodec::H264Nvenc => Some(PixelFormat::Nv12),
+            VideoCodec::HevcNvenc => match bit_depth {
+                10 => Some(PixelFormat::P010le),
+                _ => Some(PixelFormat::Nv12),
+            },
+            _ => None,
+        }
+    }
+
     pub(crate) fn as_arg(&self) -> Vec<String> {
         let codec: &str = match self {
             VideoCodec::Copy => "copy",

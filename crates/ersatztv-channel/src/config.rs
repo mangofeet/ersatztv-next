@@ -80,12 +80,12 @@ pub enum HardwareAccel {
     VideoToolbox,
 }
 
-impl From<HardwareAccel> for ffpipeline::hardware_accel::HardwareAccel {
+impl From<HardwareAccel> for ffpipeline::pipeline::HardwareAccel {
     fn from(value: HardwareAccel) -> Self {
         match value {
-            HardwareAccel::Cuda => ffpipeline::hardware_accel::HardwareAccel::Cuda,
-            HardwareAccel::Qsv => ffpipeline::hardware_accel::HardwareAccel::Qsv,
-            HardwareAccel::VideoToolbox => ffpipeline::hardware_accel::HardwareAccel::VideoToolbox,
+            HardwareAccel::Cuda => ffpipeline::pipeline::HardwareAccel::Cuda,
+            HardwareAccel::Qsv => ffpipeline::pipeline::HardwareAccel::Qsv,
+            HardwareAccel::VideoToolbox => ffpipeline::pipeline::HardwareAccel::VideoToolbox,
         }
     }
 }

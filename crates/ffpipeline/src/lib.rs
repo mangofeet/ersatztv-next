@@ -6,7 +6,6 @@ pub mod filter_chain;
 pub mod frame_rate;
 pub mod frame_size;
 pub mod global_option;
-pub mod hardware_accel;
 pub mod input;
 pub mod output_format;
 pub mod output_option;

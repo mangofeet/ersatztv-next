@@ -1,31 +1,72 @@
-use crate::hardware_accel::HardwareAccel;
 use crate::output_settings::OutputSettings;
+use crate::pipeline::{FrameSurface, HardwareAccel, PixelFormat};
 use crate::probe::ProbeResultVideoStream;
 
-pub struct VideoDecoder {
-    input_codec: String,
-    accel: Option<HardwareAccel>,
+pub enum VideoDecoder {
+    None,
+    Software,
+    HardwareAccel { accel: HardwareAccel },
 }
 
 impl VideoDecoder {
-    pub fn new(
+    pub(crate) fn new(
         video_stream: &ProbeResultVideoStream,
+        is_still_image: bool,
         output_settings: &OutputSettings,
     ) -> VideoDecoder {
-        VideoDecoder {
-            input_codec: video_stream.codec.to_owned(),
-            accel: output_settings.accel,
+        // stream copy should not have a decoder; still image should not use accel
+        if output_settings.video_format.is_none() || is_still_image {
+            return VideoDecoder::None;
+        }
+
+        match output_settings.accel {
+            Some(accel) => {
+                if Self::can_hw_decode(accel, &video_stream.codec, &video_stream.pix_fmt) {
+                    VideoDecoder::HardwareAccel { accel }
+                } else {
+                    VideoDecoder::Software
+                }
+            }
+            None => VideoDecoder::Software,
+        }
+    }
+
+    pub(crate) fn output_surface(&self) -> FrameSurface {
+        match self {
+            VideoDecoder::None => FrameSurface::System,
+            VideoDecoder::Software => FrameSurface::System,
+            VideoDecoder::HardwareAccel { accel } => match accel {
+                HardwareAccel::Cuda => FrameSurface::Cuda,
+                // TODO: other accels
+                _ => FrameSurface::System,
+            },
         }
     }
 
     pub(crate) fn as_arg(&self) -> Vec<String> {
-        let implicit_cuda = vec![String::from("-hwaccel_output_format"), String::from("cuda")];
+        match self {
+            VideoDecoder::None => Vec::new(),
+            VideoDecoder::Software => Vec::new(),
+            VideoDecoder::HardwareAccel { accel } => match accel {
+                HardwareAccel::Cuda => {
+                    vec![
+                        String::from("-hwaccel"),
+                        String::from("cuda"),
+                        String::from("-hwaccel_output_format"),
+                        String::from("cuda"),
+                    ]
+                }
+                _ => Vec::new(),
+            },
+        }
+    }
 
-        match (self.input_codec.as_str(), self.accel) {
-            ("mpeg2video", Some(HardwareAccel::Cuda)) => implicit_cuda,
-            ("h264", Some(HardwareAccel::Cuda)) => implicit_cuda,
-            ("hevc", Some(HardwareAccel::Cuda)) => implicit_cuda,
-            _ => Vec::new(),
+    fn can_hw_decode(accel: HardwareAccel, codec: &str, pix_fmt: &str) -> bool {
+        let pixel_format = PixelFormat::parse(pix_fmt);
+        match (accel, pixel_format.bit_depth()) {
+            (HardwareAccel::Cuda, 10) => matches!(codec, "av1" | "hevc"),
+            (HardwareAccel::Cuda, _) => matches!(codec, "av1" | "h264" | "hevc" | "mpeg2video"),
+            _ => false,
         }
     }
 }

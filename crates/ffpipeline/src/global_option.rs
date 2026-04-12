@@ -1,4 +1,4 @@
-use crate::hardware_accel::HardwareAccel;
+use crate::pipeline::HardwareAccel;
 
 pub enum LogLevel {
     Error,
@@ -17,8 +17,8 @@ pub enum GlobalOption {
     NoStdIn,
     HideBanner,
     LogLevel(LogLevel),
-    HardwareAccel(Option<HardwareAccel>),
     StandardFormatFlags,
+    InitHwDevice(HardwareAccel),
 }
 
 impl GlobalOption {
@@ -28,12 +28,16 @@ impl GlobalOption {
             GlobalOption::NoStdIn => vec![String::from("-nostdin")],
             GlobalOption::HideBanner => vec![String::from("-hide_banner")],
             GlobalOption::LogLevel(level) => level.as_arg(),
-            GlobalOption::HardwareAccel(Some(hardware_accel)) => hardware_accel.as_arg(),
-            GlobalOption::HardwareAccel(None) => Vec::new(),
             GlobalOption::StandardFormatFlags => vec![
                 String::from("-fflags"),
                 String::from("+genpts+discardcorrupt+igndts"),
             ],
+            GlobalOption::InitHwDevice(accel) => match accel {
+                HardwareAccel::Cuda => {
+                    vec![String::from("-init_hw_device"), String::from("cuda=cu")]
+                }
+                _ => Vec::new(),
+            },
         }
     }
 }

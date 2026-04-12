@@ -9,7 +9,6 @@ use crate::filter_chain::{FilterChain, PipelineFilter};
 use crate::frame_rate::FrameRate;
 use crate::frame_size::FrameSize;
 use crate::global_option::{GlobalOption, LogLevel};
-use crate::hardware_accel::HardwareAccel;
 use crate::input::{InputSettings, InputSource};
 use crate::output_option::OutputOption;
 use crate::output_settings::OutputSettings;
@@ -36,6 +35,13 @@ pub enum VideoFormat {
     Hevc,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum HardwareAccel {
+    Cuda,
+    Qsv,
+    VideoToolbox,
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct PtsOffset {
     pub duration: Duration,
@@ -48,6 +54,7 @@ pub(crate) struct OutputContext {
     pub(crate) video_codec: VideoCodec,
     pub(crate) pts_offset: Option<PtsOffset>,
     pub(crate) preferred_surface: FrameSurface,
+    pub(crate) preferred_pixel_format: Option<PixelFormat>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,7 +72,7 @@ pub enum PixelFormat {
 }
 
 impl PixelFormat {
-    fn parse(pix_fmt: &str) -> PixelFormat {
+    pub(crate) fn parse(pix_fmt: &str) -> PixelFormat {
         match pix_fmt {
             "yuv420p" => PixelFormat::Yuv420p,
             "yuv420p10le" => PixelFormat::Yuv420p10le,
@@ -99,7 +106,6 @@ impl PixelFormat {
 pub(crate) struct FrameState {
     pub(crate) size: FrameSize,
     pub(crate) is_anamorphic: bool,
-    pub(crate) is_still_image: bool,
     pub(crate) sample_aspect_ratio: Option<String>,
     pub(crate) display_aspect_ratio: Option<String>,
     pub(crate) surface: FrameSurface,
@@ -181,11 +187,8 @@ impl Pipeline {
         let video_stream = Self::select_video_stream(&input_settings)?;
         let audio_stream = Self::select_audio_stream(&input_settings)?;
 
-        // TODO: validate accel can be used (to decode)
-        let initial_surface = match output_settings.accel {
-            Some(HardwareAccel::Cuda) => FrameSurface::Cuda,
-            _ => FrameSurface::System,
-        };
+        let is_still_image = input_settings.video_input.probe_result.is_still_image();
+        let video_decoder = VideoDecoder::new(video_stream, is_still_image, &output_settings);
 
         let initial_state = FrameState {
             size: FrameSize {
@@ -193,10 +196,9 @@ impl Pipeline {
                 height: video_stream.height,
             },
             is_anamorphic: Self::is_anamorphic(video_stream),
-            is_still_image: input_settings.video_input.probe_result.is_still_image(),
             sample_aspect_ratio: video_stream.sample_aspect_ratio.to_owned(),
             display_aspect_ratio: video_stream.display_aspect_ratio.to_owned(),
-            surface: initial_surface,
+            surface: video_decoder.output_surface(),
             pixel_format: PixelFormat::parse(video_stream.pix_fmt.as_str()),
         };
 
@@ -216,6 +218,8 @@ impl Pipeline {
                 // TODO: proper surfaces for other accels
                 _ => FrameSurface::System,
             },
+            preferred_pixel_format: video_codec
+                .preferred_pixel_format(initial_state.pixel_format.bit_depth()),
         };
 
         Ok(Pipeline {
@@ -227,7 +231,6 @@ impl Pipeline {
                 GlobalOption::HideBanner,
                 GlobalOption::LogLevel(LogLevel::Error),
                 GlobalOption::StandardFormatFlags,
-                GlobalOption::HardwareAccel(output_settings.accel),
             ],
             inputs: vec![
                 PipelineInput::Audio {
@@ -244,7 +247,7 @@ impl Pipeline {
                     path: input_settings.video_input.probe_result.path.to_owned(),
                     seek: input_settings.video_input.in_point,
                     realtime: output_settings.realtime,
-                    decoder: VideoDecoder::new(video_stream, &output_settings),
+                    decoder: video_decoder,
                 },
             ],
             filter_chain: FilterChain::new(vec![
@@ -308,11 +311,8 @@ impl Pipeline {
                 .retain(|o| !matches!(o, OutputOption::AudioChannels(_)));
         }
 
-        // video copy shouldn't have bitrate, hwaccel, etc
+        // video copy shouldn't have bitrate, etc
         if self.output_context.video_codec == VideoCodec::Copy {
-            self.global_options
-                .retain(|o| !matches!(o, GlobalOption::HardwareAccel(_)));
-
             self.output_options.retain(|o| {
                 !matches!(
                     o,
@@ -323,19 +323,17 @@ impl Pipeline {
             self.filter_chain.disable_video();
         }
 
-        // still image shouldn't use hwaccel to decode
-        if self.initial_state.is_still_image {
-            self.global_options
-                .retain(|o| !matches!(o, GlobalOption::HardwareAccel(_)));
-            self.initial_state.surface = FrameSurface::System;
-        }
-
         self.filter_chain.evaluate(&self.initial_state);
         self.filter_chain.resolve(
             self.accel,
             &self.initial_state,
             &self.output_context.preferred_surface,
+            &self.output_context.preferred_pixel_format,
         );
+
+        if let Some(accel) = self.needs_hw_device() {
+            self.global_options.push(GlobalOption::InitHwDevice(accel));
+        }
     }
 
     pub fn args(&self) -> Vec<String> {
@@ -552,6 +550,28 @@ impl Pipeline {
             }
             None => false, // assumed SAR of 1:1
         }
+    }
+
+    fn needs_hw_device(&self) -> Option<HardwareAccel> {
+        let encoder_needs = match self.output_context.video_codec {
+            VideoCodec::H264Nvenc | VideoCodec::HevcNvenc => Some(HardwareAccel::Cuda),
+            VideoCodec::H264Qsv | VideoCodec::HevcQsv => Some(HardwareAccel::Qsv),
+            _ => None,
+        };
+
+        if encoder_needs.is_some() {
+            return encoder_needs;
+        }
+
+        for filter in &self.filter_chain.filters {
+            if let PipelineFilter::Video(video_filter) = filter
+                && let Some(FrameSurface::Cuda) = video_filter.required_surface()
+            {
+                return Some(HardwareAccel::Cuda);
+            }
+        }
+
+        None
     }
 }
 

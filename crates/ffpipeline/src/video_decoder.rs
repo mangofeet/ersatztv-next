@@ -31,6 +31,13 @@ impl VideoDecoder {
         }
     }
 
+    pub(crate) fn is_hardware(&self, hardware_accel: HardwareAccel) -> bool {
+        match self {
+            VideoDecoder::HardwareAccel { accel } => accel == &hardware_accel,
+            _ => false,
+        }
+    }
+
     pub(crate) fn output_surface(&self) -> FrameSurface {
         match self {
             VideoDecoder::None => FrameSurface::System,

@@ -17,6 +17,7 @@ pub enum OutputOption {
     AudioChannels(Option<u32>),
     Duration(Duration),
     TsOffset(Option<PtsOffset>),
+    CudaNoAutoScale,
     NoDemuxDecodeDelay,
     MovFlagsFastStart,
     DoNotMapMetadata,
@@ -69,6 +70,7 @@ impl OutputOption {
                 ]
             }
             OutputOption::TsOffset(_) => Vec::new(),
+            OutputOption::CudaNoAutoScale => vec![String::from("-noautoscale")],
             OutputOption::NoDemuxDecodeDelay => vec!["-muxdelay", "0", "-muxpreload", "0"]
                 .into_iter()
                 .map(String::from)

@@ -35,7 +35,7 @@ pub enum VideoFormat {
     Hevc,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HardwareAccel {
     Cuda,
     Qsv,
@@ -275,6 +275,7 @@ impl Pipeline {
             output_options: vec![
                 OutputOption::NoDemuxDecodeDelay,
                 OutputOption::MovFlagsFastStart,
+                OutputOption::CudaNoAutoScale,
                 OutputOption::AudioCodec(audio_codec),
                 OutputOption::AudioBitrate(output_settings.audio_bitrate),
                 OutputOption::AudioBuffer(output_settings.audio_buffer),
@@ -328,6 +329,22 @@ impl Pipeline {
             });
 
             self.filter_chain.disable_video();
+        }
+
+        // remove cuda workaround when not cuda
+        let is_cuda_decoder = self
+            .inputs
+            .iter()
+            .find_map(|s| match s {
+                PipelineInput::Video { decoder, .. } => {
+                    Some(decoder.is_hardware(HardwareAccel::Cuda))
+                }
+                _ => None,
+            })
+            .unwrap_or(false);
+        if !is_cuda_decoder {
+            self.output_options
+                .retain(|o| !matches!(o, OutputOption::CudaNoAutoScale));
         }
 
         self.filter_chain.evaluate(&self.initial_state);

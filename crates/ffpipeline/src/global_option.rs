@@ -34,7 +34,7 @@ impl GlobalOption {
             ],
             GlobalOption::InitHwDevice(accel) => match accel {
                 HardwareAccel::Cuda => {
-                    vec![String::from("-init_hw_device"), String::from("cuda=cu")]
+                    vec![String::from("-init_hw_device"), String::from("cuda")]
                 }
                 _ => Vec::new(),
             },

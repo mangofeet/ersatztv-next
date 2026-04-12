@@ -43,6 +43,20 @@ impl VideoDecoder {
         }
     }
 
+    pub(crate) fn output_format(&self, source_pixel_format: &PixelFormat) -> PixelFormat {
+        match self {
+            VideoDecoder::None => source_pixel_format.clone(),
+            VideoDecoder::Software => source_pixel_format.clone(),
+            VideoDecoder::HardwareAccel { accel } => match accel {
+                HardwareAccel::Cuda => match source_pixel_format.bit_depth() {
+                    10 => PixelFormat::P010le,
+                    _ => PixelFormat::Nv12,
+                },
+                _ => source_pixel_format.clone(),
+            },
+        }
+    }
+
     pub(crate) fn as_arg(&self) -> Vec<String> {
         match self {
             VideoDecoder::None => Vec::new(),

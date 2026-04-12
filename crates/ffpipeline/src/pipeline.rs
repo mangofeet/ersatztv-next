@@ -199,7 +199,8 @@ impl Pipeline {
             sample_aspect_ratio: video_stream.sample_aspect_ratio.to_owned(),
             display_aspect_ratio: video_stream.display_aspect_ratio.to_owned(),
             surface: video_decoder.output_surface(),
-            pixel_format: PixelFormat::parse(video_stream.pix_fmt.as_str()),
+            pixel_format: video_decoder
+                .output_format(&PixelFormat::parse(video_stream.pix_fmt.as_str())),
         };
 
         let initial_scaled_size = output_settings
@@ -226,7 +227,10 @@ impl Pipeline {
             accel: output_settings.accel,
             initial_state: initial_state.clone(),
             global_options: vec![
-                GlobalOption::Threads(0),
+                GlobalOption::Threads(match output_settings.accel {
+                    Some(HardwareAccel::Cuda) => 1,
+                    _ => 0,
+                }),
                 GlobalOption::NoStdIn,
                 GlobalOption::HideBanner,
                 GlobalOption::LogLevel(LogLevel::Error),
@@ -253,6 +257,9 @@ impl Pipeline {
             filter_chain: FilterChain::new(vec![
                 PipelineFilter::Audio(AudioFilter::Resample),
                 PipelineFilter::Audio(AudioFilter::Pad),
+                PipelineFilter::Video(VideoFilter::CudaHwUploadFallback {
+                    target_pixel_format: output_context.preferred_pixel_format.clone(),
+                }),
                 PipelineFilter::Video(VideoFilter::Loop {
                     codec: video_stream.codec.to_owned(),
                 }),

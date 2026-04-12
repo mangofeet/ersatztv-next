@@ -88,13 +88,17 @@ impl FilterChain {
                                 _ => PixelFormat::Nv12,
                             };
 
-                            resolved.push(PipelineFilter::Video(VideoFilter::HwDownload {
+                            let download = VideoFilter::HwDownload {
                                 target_pixel_format,
-                            }));
+                            };
+                            download.apply_to(&mut current_state);
+                            resolved.push(PipelineFilter::Video(download));
                         } else {
-                            resolved.push(PipelineFilter::Video(VideoFilter::HwUpload {
+                            let upload = VideoFilter::HwUpload {
                                 target_surface: required.clone(),
-                            }))
+                            };
+                            upload.apply_to(&mut current_state);
+                            resolved.push(PipelineFilter::Video(upload))
                         }
                     }
 
@@ -111,34 +115,56 @@ impl FilterChain {
         }
 
         if current_state.surface != *encoder_surface {
+            log::debug!(
+                "current surface {:?} doesn't match encoder {:?}",
+                current_state.surface,
+                *encoder_surface
+            );
+
             if *encoder_surface == FrameSurface::System {
                 let target_pixel_format = match current_state.pixel_format.bit_depth() {
                     10 => PixelFormat::P010le,
                     _ => PixelFormat::Nv12,
                 };
 
-                resolved.push(PipelineFilter::Video(VideoFilter::HwDownload {
+                let download = VideoFilter::HwDownload {
                     target_pixel_format,
-                }));
+                };
+                download.apply_to(&mut current_state);
+                resolved.push(PipelineFilter::Video(download));
             } else {
-                resolved.push(PipelineFilter::Video(VideoFilter::HwUpload {
+                let upload = VideoFilter::HwUpload {
                     target_surface: encoder_surface.clone(),
-                }));
+                };
+                upload.apply_to(&mut current_state);
+                resolved.push(PipelineFilter::Video(upload))
             }
         }
 
         if let Some(pixel_format) = encoder_pixel_format
             && current_state.pixel_format != *pixel_format
         {
+            log::debug!(
+                "current pixel format {:?} doesn't match encoder {:?}",
+                current_state.pixel_format,
+                *pixel_format
+            );
+
             match current_state.surface {
                 FrameSurface::Cuda => {
-                    resolved.push(PipelineFilter::Video(VideoFilter::FormatCuda {
+                    let format = VideoFilter::FormatCuda {
                         format: pixel_format.to_owned(),
-                    }));
+                    };
+                    format.apply_to(&mut current_state);
+                    resolved.push(PipelineFilter::Video(format));
                 }
-                FrameSurface::System => resolved.push(PipelineFilter::Video(VideoFilter::Format {
-                    format: pixel_format.to_owned(),
-                })),
+                FrameSurface::System => {
+                    let format = VideoFilter::Format {
+                        format: pixel_format.to_owned(),
+                    };
+                    format.apply_to(&mut current_state);
+                    resolved.push(PipelineFilter::Video(format))
+                }
             }
         }
 

@@ -35,6 +35,9 @@ pub enum VideoFilter {
     FormatCuda {
         format: PixelFormat,
     },
+    CudaHwUploadFallback {
+        target_pixel_format: Option<PixelFormat>,
+    },
 }
 
 impl VideoFilter {
@@ -47,6 +50,14 @@ impl VideoFilter {
             VideoFilter::ScaleCuda { .. } => None,
             VideoFilter::FormatCuda { .. } => None,
             VideoFilter::Format { .. } => None,
+
+            VideoFilter::CudaHwUploadFallback { .. } => {
+                if state.surface == FrameSurface::Cuda {
+                    Some(self.clone())
+                } else {
+                    None
+                }
+            }
 
             VideoFilter::Scale {
                 size: Some(target), ..
@@ -101,9 +112,15 @@ impl VideoFilter {
                 state.sample_aspect_ratio = Some(String::from("1:1"));
                 state.display_aspect_ratio = None;
             }
+            VideoFilter::Scale { size: None, .. } => {}
             VideoFilter::Pad { size: Some(size) } => {
                 state.size = size.clone();
                 state.surface = FrameSurface::System;
+            }
+            VideoFilter::Pad { size: None } => {}
+            VideoFilter::Loop { .. } => {}
+            VideoFilter::Format { format } => {
+                state.pixel_format = format.clone();
             }
             VideoFilter::ScaleCuda {
                 size: Some(size), ..
@@ -112,7 +129,18 @@ impl VideoFilter {
                 state.surface = FrameSurface::Cuda;
                 // TODO: anamorphic handling
             }
-            _ => {}
+            VideoFilter::ScaleCuda { size: None, .. } => {}
+            VideoFilter::FormatCuda { format } => {
+                state.pixel_format = format.clone();
+            }
+            VideoFilter::CudaHwUploadFallback {
+                target_pixel_format: Some(format),
+            } => {
+                state.pixel_format = format.clone();
+            }
+            VideoFilter::CudaHwUploadFallback {
+                target_pixel_format: None,
+            } => {}
         }
     }
 
@@ -136,6 +164,7 @@ impl VideoFilter {
 
             VideoFilter::ScaleCuda { .. } => Some(FrameSurface::Cuda),
             VideoFilter::FormatCuda { .. } => Some(FrameSurface::Cuda),
+            VideoFilter::CudaHwUploadFallback { .. } => None,
         }
     }
 
@@ -195,6 +224,15 @@ impl VideoFilter {
             VideoFilter::FormatCuda { format } => {
                 Some(format!("scale_cuda=format={}", format.as_arg()))
             }
+            VideoFilter::CudaHwUploadFallback {
+                target_pixel_format: Some(_format),
+            } => {
+                //Some(format!("hwupload,scale_cuda=format={}:passthrough=1", format.as_arg()))
+                Some(String::from("hwupload"))
+            }
+            VideoFilter::CudaHwUploadFallback {
+                target_pixel_format: None,
+            } => None,
         }
     }
 }

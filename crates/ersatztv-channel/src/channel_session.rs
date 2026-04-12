@@ -8,7 +8,7 @@ use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource, TrackSelection};
 use ffpipeline::frame_rate::FrameRate;
 use ffpipeline::frame_size::FrameSize;
 use ffpipeline::hardware_accel::HardwareAccel;
-use ffpipeline::input::{InputSettings, ProbedInput};
+use ffpipeline::input::{InputSettings, InputSource, ProbedInput};
 use ffpipeline::output_settings::OutputSettings;
 use ffpipeline::pipeline::{AudioFormat, Kbps, PtsOffset, SEGMENT_SECONDS, VideoFormat};
 use ffpipeline::probe::ProbeResult;
@@ -354,6 +354,10 @@ impl ChannelSession {
 
         let input_settings = InputSettings {
             audio_input: ProbedInput {
+                input_source: match audio_source {
+                    PlayoutItemSource::Local { path, .. } => InputSource::Local { path },
+                    PlayoutItemSource::Lavfi { params } => InputSource::Lavfi { params },
+                },
                 in_point: audio_timing.in_point,
                 out_point: audio_timing.out_point,
                 probe_result: audio_probe_result,
@@ -361,6 +365,10 @@ impl ChannelSession {
                 video_index: None,
             },
             video_input: ProbedInput {
+                input_source: match video_source {
+                    PlayoutItemSource::Local { path, .. } => InputSource::Local { path },
+                    PlayoutItemSource::Lavfi { params } => InputSource::Lavfi { params },
+                },
                 in_point: if video_probe_result.is_still_image() {
                     Duration::ZERO
                 } else {
@@ -464,9 +472,11 @@ impl ChannelSession {
 
                 Ok(probe_result)
             }
-            //PlayoutItemSource::Lavfi { params } => {
-            //},
-            _ => Err(ChannelError::PlayoutJsonLocalSourceRequired),
+            PlayoutItemSource::Lavfi { params } => {
+                let probe_result = probe::probe_lavfi(params)?;
+
+                Ok(probe_result)
+            }
         }
     }
 

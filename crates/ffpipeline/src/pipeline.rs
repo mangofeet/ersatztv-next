@@ -10,7 +10,7 @@ use crate::frame_rate::FrameRate;
 use crate::frame_size::FrameSize;
 use crate::global_option::{GlobalOption, LogLevel};
 use crate::hardware_accel::HardwareAccel;
-use crate::input::InputSettings;
+use crate::input::{InputSettings, InputSource};
 use crate::output_option::OutputOption;
 use crate::output_settings::OutputSettings;
 use crate::probe::{ProbeResultAudioStream, ProbeResultStream, ProbeResultVideoStream};
@@ -59,6 +59,7 @@ pub(crate) struct FrameState {
 
 pub enum PipelineInput {
     Audio {
+        input_source: InputSource,
         index: u32,
         path: String,
         seek: Duration,
@@ -66,6 +67,7 @@ pub enum PipelineInput {
         decoder: AudioDecoder,
     },
     Video {
+        input_source: InputSource,
         index: u32,
         path: String,
         seek: Duration,
@@ -164,6 +166,7 @@ impl Pipeline {
             ],
             inputs: vec![
                 PipelineInput::Audio {
+                    input_source: input_settings.audio_input.input_source.to_owned(),
                     index: audio_stream.stream_index,
                     path: input_settings.audio_input.probe_result.path.to_owned(),
                     seek: input_settings.audio_input.in_point,
@@ -171,6 +174,7 @@ impl Pipeline {
                     decoder: AudioDecoder::new(audio_stream, &output_settings),
                 },
                 PipelineInput::Video {
+                    input_source: input_settings.video_input.input_source.to_owned(),
                     index: video_stream.stream_index,
                     path: input_settings.video_input.probe_result.path.to_owned(),
                     seek: input_settings.video_input.in_point,
@@ -277,6 +281,7 @@ impl Pipeline {
         for input in &self.inputs {
             match input {
                 PipelineInput::Audio {
+                    input_source,
                     index,
                     path,
                     decoder,
@@ -290,10 +295,15 @@ impl Pipeline {
 
                     // if more than one path, audio is probably separate from video
                     if distinct_paths.len() > 1 {
+                        if matches!(input_source, InputSource::Lavfi { .. }) {
+                            result.extend([String::from("-f"), String::from("lavfi")]);
+                        }
+
                         result.extend([String::from("-i"), path.to_owned()]);
                     }
                 }
                 PipelineInput::Video {
+                    input_source,
                     index,
                     path,
                     seek,
@@ -313,6 +323,10 @@ impl Pipeline {
 
                     if *realtime {
                         result.extend([String::from("-readrate"), String::from("1.0")]);
+                    }
+
+                    if matches!(input_source, InputSource::Lavfi { .. }) {
+                        result.extend([String::from("-f"), String::from("lavfi")]);
                     }
 
                     result.extend([String::from("-i"), path.to_owned()]);

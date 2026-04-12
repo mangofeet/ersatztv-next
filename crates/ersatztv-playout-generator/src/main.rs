@@ -124,17 +124,17 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
             if is_image {
                 playout_item.tracks = Some(PlayoutItemTracks {
                     audio: Some(TrackSelection::Source {
-                        // source: PlayoutItemSource::Lavfi {
-                        //     params: format!(
-                        //         "anullsrc=channel_layout=stereo:sample_rate=48000:d={}",
-                        //         image_duration.as_secs()
-                        //     ),
-                        // },
-                        source: PlayoutItemSource::Local {
-                            path: String::from("~/Music/silence.mp3"),
-                            in_point_ms: None,
-                            out_point_ms: Some(image_duration.as_millis() as u64),
+                        source: PlayoutItemSource::Lavfi {
+                            params: format!(
+                                "sine=frequency=1000:sample_rate=48000:d={}",
+                                image_duration.as_secs()
+                            ),
                         },
+                        // source: PlayoutItemSource::Local {
+                        //     path: String::from("~/Music/silence.mp3"),
+                        //     in_point_ms: None,
+                        //     out_point_ms: Some(image_duration.as_millis() as u64),
+                        // },
                     }),
                     video: playout_item
                         .source

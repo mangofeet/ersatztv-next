@@ -7,7 +7,14 @@ pub struct InputSettings {
     pub video_input: ProbedInput,
 }
 
+#[derive(Clone)]
+pub enum InputSource {
+    Local { path: String },
+    Lavfi { params: String },
+}
+
 pub struct ProbedInput {
+    pub input_source: InputSource,
     pub probe_result: ProbeResult,
     pub in_point: Duration,
     pub out_point: Duration,

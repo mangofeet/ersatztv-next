@@ -31,9 +31,6 @@ pub enum ChannelError {
     #[error("unable to find current item in playout JSON")]
     PlayoutJsonNoItem,
 
-    #[error("only local sources are supported as playout items")]
-    PlayoutJsonLocalSourceRequired,
-
     #[error("local source is invalid for playout item")]
     PlayoutJsonInvalidLocalSource,
 

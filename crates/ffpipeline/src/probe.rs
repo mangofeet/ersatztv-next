@@ -128,8 +128,47 @@ pub fn probe(path: &str) -> Result<ProbeResult, FFPipelineError> {
         return Err(FFPipelineError::ProbeFailed);
     }
 
-    let raw_output =
-        String::from_utf8(output.stdout).map_err(|_| FFPipelineError::ProbeFailedToParse)?;
+    parse_ffprobe_stdout(path, output.stdout)
+}
+
+pub fn probe_lavfi(lavfi: &str) -> Result<ProbeResult, FFPipelineError> {
+    let mut ffmpeg = Command::new("ffmpeg")
+        .args(["-f", "lavfi", "-i", lavfi, "-t", "1", "-f", "nut", "pipe:1"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|_| FFPipelineError::ProbeFailed)?;
+
+    let ffmpeg_stdout = ffmpeg.stdout.take().ok_or(FFPipelineError::ProbeFailed)?;
+
+    let output = Command::new("ffprobe")
+        .args([
+            "-hide_banner",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            "-show_chapters",
+            "-i",
+            "pipe:0",
+        ])
+        .stdin(ffmpeg_stdout)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map_err(|_| FFPipelineError::ProbeFailed)?;
+
+    let _ = ffmpeg.wait();
+
+    if !output.status.success() {
+        return Err(FFPipelineError::ProbeFailed);
+    }
+
+    parse_ffprobe_stdout(lavfi, output.stdout)
+}
+
+fn parse_ffprobe_stdout(path: &str, stdout: Vec<u8>) -> Result<ProbeResult, FFPipelineError> {
+    let raw_output = String::from_utf8(stdout).map_err(|_| FFPipelineError::ProbeFailedToParse)?;
 
     //println!("{raw_output}");
 

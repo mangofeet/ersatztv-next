@@ -51,6 +51,9 @@ pub enum VideoFilter {
     FormatCuda {
         format: PixelFormat,
     },
+    PadCuda {
+        size: Option<FrameSize>,
+    },
     CudaHwUploadFallback {
         target_pixel_format: Option<PixelFormat>,
     },
@@ -65,6 +68,7 @@ impl VideoFilter {
             VideoFilter::HwDownload { .. } => None,
             VideoFilter::ScaleCuda { .. } => None,
             VideoFilter::FormatCuda { .. } => None,
+            VideoFilter::PadCuda { .. } => None,
             VideoFilter::Format { .. } => None,
 
             VideoFilter::CudaHwUploadFallback { .. } => {
@@ -149,6 +153,11 @@ impl VideoFilter {
             VideoFilter::FormatCuda { format } => {
                 state.pixel_format = format.clone();
             }
+            VideoFilter::PadCuda { size: Some(size) } => {
+                state.size = size.clone();
+                state.surface = FrameSurface::Cuda;
+            }
+            VideoFilter::PadCuda { size: None } => {}
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: Some(format),
             } => {
@@ -184,6 +193,13 @@ impl VideoFilter {
                     self.clone()
                 }
             }
+            (VideoFilter::Pad { size }, Some(HardwareAccel::Cuda)) => {
+                if ffmpeg_info.has_video_filter(&KnownVideoFilter::PadCuda) {
+                    VideoFilter::PadCuda { size: size.clone() }
+                } else {
+                    self.clone()
+                }
+            }
             _ => self.clone(),
         }
     }
@@ -199,6 +215,7 @@ impl VideoFilter {
 
             VideoFilter::ScaleCuda { .. } => Some(FrameSurface::Cuda),
             VideoFilter::FormatCuda { .. } => Some(FrameSurface::Cuda),
+            VideoFilter::PadCuda { .. } => Some(FrameSurface::Cuda),
             VideoFilter::CudaHwUploadFallback { .. } => None,
         }
     }
@@ -269,6 +286,10 @@ impl VideoFilter {
             VideoFilter::FormatCuda { format } => {
                 Some(format!("scale_cuda=format={}", format.as_arg()))
             }
+            VideoFilter::PadCuda { size: Some(size) } => {
+                Some(format!("pad_cuda={}:{}:-1:-1:color=black,setsar=1", size.width, size.height))
+            }
+            VideoFilter::PadCuda { size: None } => None,
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: Some(_format),
             } => Some(String::from("hwupload")),

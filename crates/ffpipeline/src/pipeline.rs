@@ -552,8 +552,7 @@ impl Pipeline {
                 let display_aspect_ratio = video_stream
                     .display_aspect_ratio
                     .as_ref()
-                    .map(|dar| dar.as_ref())
-                    .unwrap_or("");
+                    .map_or("", |dar| dar.as_ref());
 
                 // square pixels
                 if sample_aspect_ratio == "1:1" {

@@ -7,6 +7,19 @@ pub enum ForceOriginalAspectRatio {
     Decrease,
 }
 
+impl ForceOriginalAspectRatio {
+    fn as_arg(&self) -> String {
+        match self {
+            ForceOriginalAspectRatio::Increase => {
+                String::from(":force_original_aspect_ratio=increase")
+            }
+            ForceOriginalAspectRatio::Decrease => {
+                String::from(":force_original_aspect_ratio=decrease")
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum VideoFilter {
     HwUpload {
@@ -31,6 +44,8 @@ pub enum VideoFilter {
     },
     ScaleCuda {
         size: Option<FrameSize>,
+        input_is_anamorphic: bool,
+        force_original_aspect_ratio: Option<ForceOriginalAspectRatio>,
     },
     FormatCuda {
         format: PixelFormat,
@@ -146,9 +161,18 @@ impl VideoFilter {
 
     pub(crate) fn best_for(&self, accel: Option<HardwareAccel>) -> VideoFilter {
         match (self, accel) {
-            (VideoFilter::Scale { size, .. }, Some(HardwareAccel::Cuda)) => {
-                VideoFilter::ScaleCuda { size: size.clone() }
-            }
+            (
+                VideoFilter::Scale {
+                    size,
+                    input_is_anamorphic,
+                    force_original_aspect_ratio,
+                },
+                Some(HardwareAccel::Cuda),
+            ) => VideoFilter::ScaleCuda {
+                size: size.clone(),
+                input_is_anamorphic: *input_is_anamorphic,
+                force_original_aspect_ratio: force_original_aspect_ratio.clone(),
+            },
             _ => self.clone(),
         }
     }
@@ -185,15 +209,9 @@ impl VideoFilter {
                 input_is_anamorphic,
                 force_original_aspect_ratio,
             } => {
-                let aspect_ratio = match force_original_aspect_ratio {
-                    Some(ForceOriginalAspectRatio::Increase) => {
-                        String::from(":force_original_aspect_ratio=increase")
-                    }
-                    Some(ForceOriginalAspectRatio::Decrease) => {
-                        String::from(":force_original_aspect_ratio=decrease")
-                    }
-                    None => String::new(),
-                };
+                let aspect_ratio = force_original_aspect_ratio
+                    .as_ref()
+                    .map_or(String::new(), |f| f.as_arg());
 
                 if *input_is_anamorphic {
                     Some(format!(
@@ -215,11 +233,27 @@ impl VideoFilter {
             VideoFilter::Pad { .. } => None,
             VideoFilter::Loop { .. } => Some(String::from("loop=-1:1")),
             VideoFilter::Format { format } => Some(format!("format={}", format.as_arg())),
-            VideoFilter::ScaleCuda { size: Some(size) } => Some(format!(
-                // TODO: anamorphic, aspect ratio
-                "scale_cuda={}:{}",
-                size.width, size.height
-            )),
+            VideoFilter::ScaleCuda {
+                size: Some(size),
+                input_is_anamorphic,
+                force_original_aspect_ratio,
+            } => {
+                let aspect_ratio = force_original_aspect_ratio
+                    .as_ref()
+                    .map_or(String::new(), |f| f.as_arg());
+
+                if *input_is_anamorphic {
+                    Some(format!(
+                        "scale_cuda=iw*sar:ih,setsar=1,scale_cuda={}:{}{}",
+                        size.width, size.height, aspect_ratio
+                    ))
+                } else {
+                    Some(format!(
+                        "scale_cuda={}:{}{},setsar=1",
+                        size.width, size.height, aspect_ratio
+                    ))
+                }
+            }
             VideoFilter::ScaleCuda { .. } => None,
             VideoFilter::FormatCuda { format } => {
                 Some(format!("scale_cuda=format={}", format.as_arg()))

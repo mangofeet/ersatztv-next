@@ -225,11 +225,11 @@ impl VideoFilter {
                 Some(format!("scale_cuda=format={}", format.as_arg()))
             }
             VideoFilter::CudaHwUploadFallback {
-                target_pixel_format: Some(_format),
-            } => {
-                //Some(format!("hwupload,scale_cuda=format={}:passthrough=1", format.as_arg()))
-                Some(String::from("hwupload"))
-            }
+                target_pixel_format: Some(format),
+            } => Some(format!(
+                "hwupload,scale_cuda=format={}:passthrough=1",
+                format.as_arg()
+            )),
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: None,
             } => None,

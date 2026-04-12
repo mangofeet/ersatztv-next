@@ -1,5 +1,6 @@
 use crate::audio_filter::AudioFilter;
-use crate::pipeline::FrameState;
+use crate::hardware_accel::HardwareAccel;
+use crate::pipeline::{FrameState, FrameSurface};
 use crate::video_filter::VideoFilter;
 
 #[derive(Clone)]
@@ -26,18 +27,21 @@ impl FilterChain {
         }
     }
 
+    /// Disables/drops all audio filters from the filter chain.
     pub(crate) fn disable_audio(&mut self) {
         self.filters
             .retain(|f| !matches!(f, PipelineFilter::Audio(_)));
     }
 
+    /// Disables/drops all video filters from the filter chain.
     pub(crate) fn disable_video(&mut self) {
         self.filters
             .retain(|f| !matches!(f, PipelineFilter::Video(_)));
     }
 
-    pub(crate) fn optimize(&mut self, initial_state: &FrameState) {
-        // optimize filter chain by passing state through each
+    /// Optimizes the filter chain by passing the frame state through each filter.
+    /// Filters will be dropped when the input state already matches the desired output state.
+    pub(crate) fn evaluate(&mut self, initial_state: &FrameState) {
         let mut state = initial_state.to_owned();
         let mut active_filters = Vec::new();
 
@@ -59,6 +63,56 @@ impl FilterChain {
         }
 
         self.filters = active_filters;
+    }
+
+    pub(crate) fn resolve(
+        &mut self,
+        accel: Option<HardwareAccel>,
+        initial_surface: &FrameSurface,
+        encoder_surface: &FrameSurface,
+    ) {
+        let mut resolved = Vec::new();
+        let mut current_surface = initial_surface.clone();
+
+        for filter in &self.filters {
+            if let PipelineFilter::Video(video_filter) = filter {
+                let best = video_filter.best_for(accel);
+
+                if let Some(required) = best.required_surface()
+                    && current_surface != required
+                {
+                    if required == FrameSurface::System {
+                        resolved.push(PipelineFilter::Video(VideoFilter::HwDownload));
+                    } else {
+                        resolved.push(PipelineFilter::Video(VideoFilter::HwUpload {
+                            target_surface: required.clone(),
+                        }))
+                    }
+                }
+
+                current_surface = best.output_surface();
+                resolved.push(PipelineFilter::Video(best));
+            } else {
+                resolved.push(filter.clone());
+            }
+        }
+
+        if current_surface != *encoder_surface {
+            log::debug!(
+                "current surface ({:?}) != encoder surface ({:?})",
+                current_surface,
+                *encoder_surface
+            );
+            if *encoder_surface == FrameSurface::System {
+                resolved.push(PipelineFilter::Video(VideoFilter::HwDownload));
+            } else {
+                resolved.push(PipelineFilter::Video(VideoFilter::HwUpload {
+                    target_surface: encoder_surface.clone(),
+                }));
+            }
+        }
+
+        self.filters = resolved;
     }
 
     pub(crate) fn build(&mut self, audio_label: &str, video_label: &str) {

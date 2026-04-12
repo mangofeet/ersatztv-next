@@ -1,5 +1,6 @@
 use crate::frame_size::FrameSize;
-use crate::pipeline::FrameState;
+use crate::hardware_accel::HardwareAccel;
+use crate::pipeline::{FrameState, FrameSurface};
 
 #[derive(Clone)]
 pub enum ForceOriginalAspectRatio {
@@ -9,6 +10,11 @@ pub enum ForceOriginalAspectRatio {
 
 #[derive(Clone)]
 pub enum VideoFilter {
+    HwUpload {
+        target_surface: FrameSurface,
+    },
+    HwDownload,
+
     Scale {
         size: Option<FrameSize>,
         input_is_anamorphic: bool,
@@ -20,11 +26,22 @@ pub enum VideoFilter {
     Loop {
         codec: String,
     },
+
+    ScaleCuda {
+        size: Option<FrameSize>,
+    },
 }
 
 impl VideoFilter {
+    /// Determines whether the filter is needed given the input frame state. If so, the filter
+    /// and its output frame state will be returned.
     pub(crate) fn evaluate(&self, state: &FrameState) -> Option<(VideoFilter, FrameState)> {
         match self {
+            // hardware filters aren't present at the point where this is called
+            VideoFilter::HwUpload { .. } => None,
+            VideoFilter::HwDownload => None,
+            VideoFilter::ScaleCuda { .. } => None,
+
             VideoFilter::Scale {
                 size: Some(target), ..
             } => {
@@ -47,8 +64,10 @@ impl VideoFilter {
                         FrameState {
                             size: actual,
                             is_anamorphic: false,
+                            is_still_image: false,
                             sample_aspect_ratio: Some(String::from("1:1")),
                             display_aspect_ratio: None,
+                            surface: FrameSurface::System,
                         },
                     ))
                 }
@@ -64,8 +83,10 @@ impl VideoFilter {
                         FrameState {
                             size: target.clone(),
                             is_anamorphic: false,
+                            is_still_image: false,
                             sample_aspect_ratio: Some(String::from("1:1")),
                             display_aspect_ratio: None,
+                            surface: FrameSurface::System,
                         },
                     ))
                 }
@@ -76,8 +97,41 @@ impl VideoFilter {
         }
     }
 
+    pub(crate) fn best_for(&self, accel: Option<HardwareAccel>) -> VideoFilter {
+        match (self, accel) {
+            (VideoFilter::Scale { size, .. }, Some(HardwareAccel::Cuda)) => {
+                VideoFilter::ScaleCuda { size: size.clone() }
+            }
+            _ => self.clone(),
+        }
+    }
+
+    pub(crate) fn required_surface(&self) -> Option<FrameSurface> {
+        match self {
+            VideoFilter::HwUpload { .. } => None,
+            VideoFilter::HwDownload => None,
+            VideoFilter::Scale { .. } => Some(FrameSurface::System),
+            VideoFilter::Pad { .. } => Some(FrameSurface::System),
+            VideoFilter::Loop { .. } => Some(FrameSurface::System),
+
+            VideoFilter::ScaleCuda { .. } => Some(FrameSurface::Cuda),
+        }
+    }
+
+    pub(crate) fn output_surface(&self) -> FrameSurface {
+        match self {
+            VideoFilter::ScaleCuda { .. } => FrameSurface::Cuda,
+            _ => FrameSurface::System,
+        }
+    }
+
     pub(crate) fn as_arg(&self) -> Option<String> {
         match self {
+            VideoFilter::HwUpload { target_surface } => match target_surface {
+                FrameSurface::Cuda => Some(String::from("hwupload_cuda")),
+                _ => None,
+            },
+            VideoFilter::HwDownload => Some(String::from("hwdownload,format=nv12")),
             VideoFilter::Scale {
                 size: Some(size),
                 input_is_anamorphic,
@@ -112,6 +166,12 @@ impl VideoFilter {
             )),
             VideoFilter::Pad { .. } => None,
             VideoFilter::Loop { .. } => Some(String::from("loop=-1:1")),
+            VideoFilter::ScaleCuda { size: Some(size) } => Some(format!(
+                // TODO: anamorphic, aspect ratio
+                "scale_cuda={}:{}",
+                size.width, size.height
+            )),
+            VideoFilter::ScaleCuda { .. } => None,
         }
     }
 }

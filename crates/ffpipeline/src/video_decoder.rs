@@ -3,8 +3,8 @@ use crate::output_settings::OutputSettings;
 use crate::probe::ProbeResultVideoStream;
 
 pub struct VideoDecoder {
-    _input_codec: String,
-    _accel: Option<HardwareAccel>,
+    input_codec: String,
+    accel: Option<HardwareAccel>,
 }
 
 impl VideoDecoder {
@@ -13,12 +13,19 @@ impl VideoDecoder {
         output_settings: &OutputSettings,
     ) -> VideoDecoder {
         VideoDecoder {
-            _input_codec: video_stream.codec.to_owned(),
-            _accel: output_settings.accel,
+            input_codec: video_stream.codec.to_owned(),
+            accel: output_settings.accel,
         }
     }
 
     pub(crate) fn as_arg(&self) -> Vec<String> {
-        Vec::new()
+        let implicit_cuda = vec![String::from("-hwaccel_output_format"), String::from("cuda")];
+
+        match (self.input_codec.as_str(), self.accel) {
+            ("mpeg2video", Some(HardwareAccel::Cuda)) => implicit_cuda,
+            ("h264", Some(HardwareAccel::Cuda)) => implicit_cuda,
+            ("hevc", Some(HardwareAccel::Cuda)) => implicit_cuda,
+            _ => Vec::new(),
+        }
     }
 }

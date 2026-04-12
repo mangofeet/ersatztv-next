@@ -47,14 +47,23 @@ pub(crate) struct OutputContext {
     pub(crate) audio_channels: Option<u32>,
     pub(crate) video_codec: VideoCodec,
     pub(crate) pts_offset: Option<PtsOffset>,
+    pub(crate) preferred_surface: FrameSurface,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FrameSurface {
+    System,
+    Cuda,
 }
 
 #[derive(Clone)]
 pub(crate) struct FrameState {
     pub(crate) size: FrameSize,
     pub(crate) is_anamorphic: bool,
+    pub(crate) is_still_image: bool,
     pub(crate) sample_aspect_ratio: Option<String>,
     pub(crate) display_aspect_ratio: Option<String>,
+    pub(crate) surface: FrameSurface,
 }
 
 pub enum PipelineInput {
@@ -81,6 +90,7 @@ pub struct PipelineOutput {
 }
 
 pub struct Pipeline {
+    accel: Option<HardwareAccel>,
     initial_state: FrameState,
 
     global_options: Vec<GlobalOption>,
@@ -131,14 +141,22 @@ impl Pipeline {
         let video_stream = Self::select_video_stream(&input_settings)?;
         let audio_stream = Self::select_audio_stream(&input_settings)?;
 
+        // TODO: validate accel can be used (to decode)
+        let initial_surface = match output_settings.accel {
+            Some(HardwareAccel::Cuda) => FrameSurface::Cuda,
+            _ => FrameSurface::System,
+        };
+
         let initial_state = FrameState {
             size: FrameSize {
                 width: video_stream.width,
                 height: video_stream.height,
             },
             is_anamorphic: Self::is_anamorphic(video_stream),
+            is_still_image: input_settings.video_input.probe_result.is_still_image(),
             sample_aspect_ratio: video_stream.sample_aspect_ratio.to_owned(),
             display_aspect_ratio: video_stream.display_aspect_ratio.to_owned(),
+            surface: initial_surface,
         };
 
         let initial_scaled_size = output_settings
@@ -152,9 +170,15 @@ impl Pipeline {
             video_codec,
             pts_offset: output_settings.pts_offset,
             media_frame_rate: video_stream.frame_rate.to_owned(),
+            preferred_surface: match output_settings.accel {
+                Some(HardwareAccel::Cuda) => FrameSurface::Cuda,
+                // TODO: proper surfaces for other accels
+                _ => FrameSurface::System,
+            },
         };
 
         Ok(Pipeline {
+            accel: output_settings.accel,
             initial_state: initial_state.clone(),
             global_options: vec![
                 GlobalOption::Threads(0),
@@ -258,7 +282,18 @@ impl Pipeline {
             self.filter_chain.disable_video();
         }
 
-        self.filter_chain.optimize(&self.initial_state);
+        // still image shouldn't use hwaccel to decode
+        if self.initial_state.is_still_image {
+            self.global_options
+                .retain(|o| !matches!(o, GlobalOption::HardwareAccel(_)));
+        }
+
+        self.filter_chain.evaluate(&self.initial_state);
+        self.filter_chain.resolve(
+            self.accel,
+            &self.initial_state.surface,
+            &self.output_context.preferred_surface,
+        );
     }
 
     pub fn args(&self) -> Vec<String> {

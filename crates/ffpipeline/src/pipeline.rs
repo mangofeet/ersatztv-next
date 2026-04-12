@@ -137,6 +137,7 @@ pub struct PipelineOutput {
 }
 
 pub struct Pipeline {
+    ffmpeg_info: FfmpegInfo,
     accel: Option<HardwareAccel>,
     initial_state: FrameState,
 
@@ -240,6 +241,7 @@ impl Pipeline {
         };
 
         Ok(Pipeline {
+            ffmpeg_info,
             accel: final_output_settings.accel,
             initial_state: initial_state.clone(),
             global_options: vec![
@@ -365,6 +367,7 @@ impl Pipeline {
 
         self.filter_chain.evaluate(&self.initial_state);
         self.filter_chain.resolve(
+            &self.ffmpeg_info,
             self.accel,
             &self.initial_state,
             &self.output_context.preferred_surface,

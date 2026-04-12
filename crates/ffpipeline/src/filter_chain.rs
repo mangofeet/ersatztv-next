@@ -1,4 +1,5 @@
 use crate::audio_filter::AudioFilter;
+use crate::ffmpeg_info::FfmpegInfo;
 use crate::pipeline::{FrameState, FrameSurface, HardwareAccel, PixelFormat};
 use crate::video_filter::VideoFilter;
 
@@ -66,6 +67,7 @@ impl FilterChain {
 
     pub(crate) fn resolve(
         &mut self,
+        ffmpeg_info: &FfmpegInfo,
         accel: Option<HardwareAccel>,
         initial_state: &FrameState,
         encoder_surface: &FrameSurface,
@@ -77,7 +79,7 @@ impl FilterChain {
         for filter in &self.filters {
             match filter {
                 PipelineFilter::Video(video_filter) => {
-                    let best = video_filter.best_for(accel);
+                    let best = video_filter.best_for(accel, ffmpeg_info);
 
                     if let Some(required) = best.required_surface()
                         && current_state.surface != required
@@ -115,11 +117,11 @@ impl FilterChain {
         }
 
         if current_state.surface != *encoder_surface {
-            log::debug!(
-                "current surface {:?} doesn't match encoder {:?}",
-                current_state.surface,
-                *encoder_surface
-            );
+            // log::debug!(
+            //     "current surface {:?} doesn't match encoder {:?}",
+            //     current_state.surface,
+            //     *encoder_surface
+            // );
 
             if *encoder_surface == FrameSurface::System {
                 let target_pixel_format = match current_state.pixel_format.bit_depth() {
@@ -144,11 +146,11 @@ impl FilterChain {
         if let Some(pixel_format) = encoder_pixel_format
             && current_state.pixel_format != *pixel_format
         {
-            log::debug!(
-                "current pixel format {:?} doesn't match encoder {:?}",
-                current_state.pixel_format,
-                *pixel_format
-            );
+            // log::debug!(
+            //     "current pixel format {:?} doesn't match encoder {:?}",
+            //     current_state.pixel_format,
+            //     *pixel_format
+            // );
 
             match current_state.surface {
                 FrameSurface::Cuda => {

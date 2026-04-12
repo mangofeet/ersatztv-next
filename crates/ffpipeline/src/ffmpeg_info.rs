@@ -4,39 +4,60 @@ use crate::error::FFPipelineError;
 use crate::pipeline::HardwareAccel;
 
 static KNOWN_ACCELS: &[&str] = &["cuda", "qsv", "videotoolbox"];
+static KNOWN_FILTERS: &[&str] = &["scale_cuda"];
+
+pub enum KnownVideoFilter {
+    ScaleCuda,
+}
 
 #[derive(Debug)]
 pub struct FfmpegInfo {
     hwaccels: Vec<String>,
+    video_filters: Vec<String>,
 }
 
 impl FfmpegInfo {
     pub async fn load(path: &str) -> Result<FfmpegInfo, FFPipelineError> {
         let hwaccels = Self::load_hw_accels(path).await?;
-        //let video_filters = Self::load_video_filters(path).await?;
-        Ok(FfmpegInfo { hwaccels })
+        let video_filters = Self::load_video_filters(path).await?;
+        Ok(FfmpegInfo {
+            hwaccels,
+            video_filters,
+        })
     }
 
     pub fn has_hw_accel(&self, accel: &HardwareAccel) -> bool {
-        let accel_string = match accel {
-            HardwareAccel::Cuda => String::from("cuda"),
-            HardwareAccel::Qsv => String::from("qsv"),
-            HardwareAccel::VideoToolbox => String::from("videotoolbox"),
-        };
+        if let Some(accel_string) = match accel {
+            HardwareAccel::Cuda => Some("cuda"),
+            _ => None,
+        } {
+            self.hwaccels.iter().any(|f| f == accel_string)
+        } else {
+            false
+        }
+    }
 
-        self.hwaccels.contains(&accel_string)
+    pub fn has_video_filter(&self, filter: &KnownVideoFilter) -> bool {
+        if let Some(filter_string) = match filter {
+            KnownVideoFilter::ScaleCuda => Some("scale_cuda"),
+        } {
+            self.video_filters.iter().any(|f| f == filter_string)
+        } else {
+            false
+        }
     }
 
     async fn load_hw_accels(path: &str) -> Result<Vec<String>, FFPipelineError> {
-        let mut hwaccels: Vec<String> = Vec::new();
-
         let output = Command::new(path)
-            .args(["-v", "quiet", "-hwaccels"])
+            .args(["-hide_banner", "-hwaccels"])
             .output()
             .await
             .map_err(|_| FFPipelineError::FfmpegCapabilitiesError(String::from("hwaccels")))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let mut accels: Vec<String> = Vec::new();
+
         for line in stdout.lines() {
             let trimmed = line.trim();
 
@@ -45,10 +66,33 @@ impl FfmpegInfo {
             }
 
             if KNOWN_ACCELS.contains(&trimmed) {
-                hwaccels.push(trimmed.to_owned());
+                accels.push(trimmed.to_owned());
             }
         }
 
-        Ok(hwaccels)
+        Ok(accels)
+    }
+
+    async fn load_video_filters(path: &str) -> Result<Vec<String>, FFPipelineError> {
+        let output = Command::new(path)
+            .args(["-hide_banner", "-filters"])
+            .output()
+            .await
+            .map_err(|_| FFPipelineError::FfmpegCapabilitiesError(String::from("filters")))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let mut filters: Vec<String> = Vec::new();
+
+        for line in stdout.lines() {
+            //  .. scale_cuda        V->V       GPU accelerated video resizer
+            if let Some(filter) = line.split_whitespace().nth(1)
+                && KNOWN_FILTERS.contains(&filter)
+            {
+                filters.push(filter.to_owned());
+            }
+        }
+
+        Ok(filters)
     }
 }

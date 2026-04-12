@@ -1,3 +1,4 @@
+use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
 use crate::frame_size::FrameSize;
 use crate::pipeline::{FrameState, FrameSurface, HardwareAccel, PixelFormat};
 
@@ -159,7 +160,11 @@ impl VideoFilter {
         }
     }
 
-    pub(crate) fn best_for(&self, accel: Option<HardwareAccel>) -> VideoFilter {
+    pub(crate) fn best_for(
+        &self,
+        accel: Option<HardwareAccel>,
+        ffmpeg_info: &FfmpegInfo,
+    ) -> VideoFilter {
         match (self, accel) {
             (
                 VideoFilter::Scale {
@@ -168,11 +173,17 @@ impl VideoFilter {
                     force_original_aspect_ratio,
                 },
                 Some(HardwareAccel::Cuda),
-            ) => VideoFilter::ScaleCuda {
-                size: size.clone(),
-                input_is_anamorphic: *input_is_anamorphic,
-                force_original_aspect_ratio: force_original_aspect_ratio.clone(),
-            },
+            ) => {
+                if ffmpeg_info.has_video_filter(&KnownVideoFilter::ScaleCuda) {
+                    VideoFilter::ScaleCuda {
+                        size: size.clone(),
+                        input_is_anamorphic: *input_is_anamorphic,
+                        force_original_aspect_ratio: force_original_aspect_ratio.clone(),
+                    }
+                } else {
+                    self.clone()
+                }
+            }
             _ => self.clone(),
         }
     }

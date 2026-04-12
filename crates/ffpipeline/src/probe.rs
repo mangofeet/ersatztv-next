@@ -16,6 +16,7 @@ pub struct ProbeResultVideoStream {
     pub frame_rate: FrameRate,
     pub sample_aspect_ratio: Option<String>,
     pub display_aspect_ratio: Option<String>,
+    pub pix_fmt: String,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +97,7 @@ struct ProbeOutputStream {
     r_frame_rate: Option<String>,
     sample_aspect_ratio: Option<String>,
     display_aspect_ratio: Option<String>,
+    pix_fmt: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -216,6 +218,7 @@ fn output_to_result(output_stream: &ProbeOutputStream) -> Option<ProbeResultStre
                 .unwrap_or(String::from("unknown")),
             height: output_stream.height?,
             width: output_stream.width?,
+            pix_fmt: output_stream.pix_fmt.clone()?,
             frame_rate: FrameRate::parse(&output_stream.r_frame_rate.clone()?),
             sample_aspect_ratio: output_stream.sample_aspect_ratio.to_owned(),
             display_aspect_ratio: output_stream.display_aspect_ratio.to_owned(),

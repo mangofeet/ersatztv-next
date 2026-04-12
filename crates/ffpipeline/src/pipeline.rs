@@ -56,6 +56,45 @@ pub enum FrameSurface {
     Cuda,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum PixelFormat {
+    Yuv420p,
+    Yuv420p10le,
+    Nv12,
+    P010le,
+}
+
+impl PixelFormat {
+    fn parse(pix_fmt: &str) -> PixelFormat {
+        match pix_fmt {
+            "yuv420p" => PixelFormat::Yuv420p,
+            "yuv420p10le" => PixelFormat::Yuv420p10le,
+            "nv12" => PixelFormat::Nv12,
+            "p010le" => PixelFormat::P010le,
+            _ => {
+                log::warn!("assuming unknown pixel format {} is yuv420p", pix_fmt);
+                PixelFormat::Yuv420p
+            }
+        }
+    }
+
+    pub(crate) fn bit_depth(&self) -> u32 {
+        match self {
+            PixelFormat::Yuv420p | PixelFormat::Nv12 => 8,
+            PixelFormat::Yuv420p10le | PixelFormat::P010le => 10,
+        }
+    }
+
+    pub(crate) fn as_arg(&self) -> &str {
+        match self {
+            PixelFormat::Yuv420p => "yuv420p",
+            PixelFormat::Yuv420p10le => "yuv420p10le",
+            PixelFormat::Nv12 => "nv12",
+            PixelFormat::P010le => "p010le",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct FrameState {
     pub(crate) size: FrameSize,
@@ -64,6 +103,7 @@ pub(crate) struct FrameState {
     pub(crate) sample_aspect_ratio: Option<String>,
     pub(crate) display_aspect_ratio: Option<String>,
     pub(crate) surface: FrameSurface,
+    pub(crate) pixel_format: PixelFormat,
 }
 
 pub enum PipelineInput {
@@ -157,6 +197,7 @@ impl Pipeline {
             sample_aspect_ratio: video_stream.sample_aspect_ratio.to_owned(),
             display_aspect_ratio: video_stream.display_aspect_ratio.to_owned(),
             surface: initial_surface,
+            pixel_format: PixelFormat::parse(video_stream.pix_fmt.as_str()),
         };
 
         let initial_scaled_size = output_settings
@@ -286,6 +327,7 @@ impl Pipeline {
         if self.initial_state.is_still_image {
             self.global_options
                 .retain(|o| !matches!(o, GlobalOption::HardwareAccel(_)));
+            self.initial_state.surface = FrameSurface::System;
         }
 
         self.filter_chain.evaluate(&self.initial_state);

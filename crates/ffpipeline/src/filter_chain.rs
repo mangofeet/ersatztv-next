@@ -1,6 +1,6 @@
 use crate::audio_filter::AudioFilter;
 use crate::hardware_accel::HardwareAccel;
-use crate::pipeline::{FrameState, FrameSurface};
+use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
 use crate::video_filter::VideoFilter;
 
 #[derive(Clone)]
@@ -83,7 +83,14 @@ impl FilterChain {
                         && current_state.surface != required
                     {
                         if required == FrameSurface::System {
-                            resolved.push(PipelineFilter::Video(VideoFilter::HwDownload));
+                            let target_pixel_format = match current_state.pixel_format.bit_depth() {
+                                10 => PixelFormat::P010le,
+                                _ => PixelFormat::Nv12,
+                            };
+
+                            resolved.push(PipelineFilter::Video(VideoFilter::HwDownload {
+                                target_pixel_format,
+                            }));
                         } else {
                             resolved.push(PipelineFilter::Video(VideoFilter::HwUpload {
                                 target_surface: required.clone(),
@@ -105,7 +112,14 @@ impl FilterChain {
 
         if current_state.surface != *encoder_surface {
             if *encoder_surface == FrameSurface::System {
-                resolved.push(PipelineFilter::Video(VideoFilter::HwDownload));
+                let target_pixel_format = match current_state.pixel_format.bit_depth() {
+                    10 => PixelFormat::P010le,
+                    _ => PixelFormat::Nv12,
+                };
+
+                resolved.push(PipelineFilter::Video(VideoFilter::HwDownload {
+                    target_pixel_format,
+                }));
             } else {
                 resolved.push(PipelineFilter::Video(VideoFilter::HwUpload {
                     target_surface: encoder_surface.clone(),

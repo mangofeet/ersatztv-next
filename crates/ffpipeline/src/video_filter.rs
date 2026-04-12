@@ -1,6 +1,6 @@
 use crate::frame_size::FrameSize;
 use crate::hardware_accel::HardwareAccel;
-use crate::pipeline::{FrameState, FrameSurface};
+use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
 
 #[derive(Clone)]
 pub enum ForceOriginalAspectRatio {
@@ -13,8 +13,9 @@ pub enum VideoFilter {
     HwUpload {
         target_surface: FrameSurface,
     },
-    HwDownload,
-
+    HwDownload {
+        target_pixel_format: PixelFormat,
+    },
     Scale {
         size: Option<FrameSize>,
         input_is_anamorphic: bool,
@@ -26,7 +27,6 @@ pub enum VideoFilter {
     Loop {
         codec: String,
     },
-
     ScaleCuda {
         size: Option<FrameSize>,
     },
@@ -38,7 +38,7 @@ impl VideoFilter {
         match self {
             // hardware filters aren't present at the point where this is called
             VideoFilter::HwUpload { .. } => None,
-            VideoFilter::HwDownload => None,
+            VideoFilter::HwDownload { .. } => None,
             VideoFilter::ScaleCuda { .. } => None,
 
             VideoFilter::Scale {
@@ -80,8 +80,11 @@ impl VideoFilter {
             VideoFilter::HwUpload { target_surface } => {
                 state.surface = target_surface.clone();
             }
-            VideoFilter::HwDownload => {
+            VideoFilter::HwDownload {
+                target_pixel_format,
+            } => {
                 state.surface = FrameSurface::System;
+                state.pixel_format = target_pixel_format.clone();
             }
             VideoFilter::Scale {
                 size: Some(size), ..
@@ -118,7 +121,7 @@ impl VideoFilter {
     pub(crate) fn required_surface(&self) -> Option<FrameSurface> {
         match self {
             VideoFilter::HwUpload { .. } => None,
-            VideoFilter::HwDownload => None,
+            VideoFilter::HwDownload { .. } => None,
             VideoFilter::Scale { .. } => Some(FrameSurface::System),
             VideoFilter::Pad { .. } => Some(FrameSurface::System),
             VideoFilter::Loop { .. } => Some(FrameSurface::System),
@@ -133,7 +136,12 @@ impl VideoFilter {
                 FrameSurface::Cuda => Some(String::from("hwupload_cuda")),
                 _ => None,
             },
-            VideoFilter::HwDownload => Some(String::from("hwdownload,format=nv12")),
+            VideoFilter::HwDownload {
+                target_pixel_format,
+            } => Some(format!(
+                "hwdownload,format={}",
+                target_pixel_format.as_arg()
+            )),
             VideoFilter::Scale {
                 size: Some(size),
                 input_is_anamorphic,

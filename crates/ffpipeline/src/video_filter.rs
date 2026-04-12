@@ -286,9 +286,10 @@ impl VideoFilter {
             VideoFilter::FormatCuda { format } => {
                 Some(format!("scale_cuda=format={}", format.as_arg()))
             }
-            VideoFilter::PadCuda { size: Some(size) } => {
-                Some(format!("pad_cuda={}:{}:-1:-1:color=black,setsar=1", size.width, size.height))
-            }
+            VideoFilter::PadCuda { size: Some(size) } => Some(format!(
+                "pad_cuda={}:{}:-1:-1:color=black,setsar=1",
+                size.width, size.height
+            )),
             VideoFilter::PadCuda { size: None } => None,
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: Some(_format),

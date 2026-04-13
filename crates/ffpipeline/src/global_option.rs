@@ -36,6 +36,14 @@ impl GlobalOption {
                 HardwareAccel::Cuda => {
                     vec![String::from("-init_hw_device"), String::from("cuda")]
                 }
+                HardwareAccel::Qsv => {
+                    vec![
+                        String::from("-init_hw_device"),
+                        String::from("qsv=hw"),
+                        String::from("-filter_hw_device"),
+                        String::from("hw"),
+                    ]
+                }
                 _ => Vec::new(),
             },
         }

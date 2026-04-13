@@ -44,6 +44,7 @@ impl VideoDecoder {
             VideoDecoder::Software => FrameSurface::System,
             VideoDecoder::HardwareAccel { accel } => match accel {
                 HardwareAccel::Cuda => FrameSurface::Cuda,
+                HardwareAccel::Qsv => FrameSurface::Qsv,
                 // TODO: other accels
                 _ => FrameSurface::System,
             },
@@ -56,6 +57,10 @@ impl VideoDecoder {
             VideoDecoder::Software => source_pixel_format.clone(),
             VideoDecoder::HardwareAccel { accel } => match accel {
                 HardwareAccel::Cuda => match source_pixel_format.bit_depth() {
+                    10 => PixelFormat::P010le,
+                    _ => PixelFormat::Nv12,
+                },
+                HardwareAccel::Qsv => match source_pixel_format.bit_depth() {
                     10 => PixelFormat::P010le,
                     _ => PixelFormat::Nv12,
                 },
@@ -77,6 +82,14 @@ impl VideoDecoder {
                         String::from("cuda"),
                     ]
                 }
+                HardwareAccel::Qsv => {
+                    vec![
+                        String::from("-hwaccel"),
+                        String::from("qsv"),
+                        String::from("-hwaccel_output_format"),
+                        String::from("qsv"),
+                    ]
+                }
                 _ => Vec::new(),
             },
         }
@@ -86,7 +99,9 @@ impl VideoDecoder {
         let pixel_format = PixelFormat::parse(pix_fmt);
         match (accel, pixel_format.bit_depth()) {
             (HardwareAccel::Cuda, 10) => matches!(codec, "av1" | "hevc"),
-            (HardwareAccel::Cuda, _) => matches!(codec, "av1" | "h264" | "hevc" | "mpeg2video"),
+            (HardwareAccel::Cuda, 8) => matches!(codec, "av1" | "h264" | "hevc" | "mpeg2video"),
+            (HardwareAccel::Qsv, 10) => matches!(codec, "hevc"),
+            (HardwareAccel::Qsv, 8) => matches!(codec, "h264" | "hevc"),
             _ => false,
         }
     }

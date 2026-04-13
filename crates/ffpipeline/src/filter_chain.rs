@@ -117,11 +117,11 @@ impl FilterChain {
         }
 
         if current_state.surface != *encoder_surface {
-            // log::debug!(
-            //     "current surface {:?} doesn't match encoder {:?}",
-            //     current_state.surface,
-            //     *encoder_surface
-            // );
+            log::debug!(
+                "current surface {:?} doesn't match encoder {:?}",
+                current_state.surface,
+                *encoder_surface
+            );
 
             if *encoder_surface == FrameSurface::System {
                 let target_pixel_format = match current_state.pixel_format.bit_depth() {
@@ -146,11 +146,11 @@ impl FilterChain {
         if let Some(pixel_format) = encoder_pixel_format
             && current_state.pixel_format != *pixel_format
         {
-            // log::debug!(
-            //     "current pixel format {:?} doesn't match encoder {:?}",
-            //     current_state.pixel_format,
-            //     *pixel_format
-            // );
+            log::debug!(
+                "current pixel format {:?} doesn't match encoder {:?}",
+                current_state.pixel_format,
+                *pixel_format
+            );
 
             match current_state.surface {
                 FrameSurface::Cuda => {
@@ -159,6 +159,9 @@ impl FilterChain {
                     };
                     format.apply_to(&mut current_state);
                     resolved.push(PipelineFilter::Video(format));
+                }
+                FrameSurface::Qsv => {
+                    // TODO: QSV format
                 }
                 FrameSurface::System => {
                     let format = VideoFilter::Format {

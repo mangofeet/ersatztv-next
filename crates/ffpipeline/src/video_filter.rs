@@ -57,6 +57,9 @@ pub enum VideoFilter {
     CudaHwUploadFallback {
         target_pixel_format: Option<PixelFormat>,
     },
+    ScaleQsv {
+        size: Option<FrameSize>,
+    },
 }
 
 impl VideoFilter {
@@ -69,6 +72,7 @@ impl VideoFilter {
             VideoFilter::ScaleCuda { .. } => None,
             VideoFilter::FormatCuda { .. } => None,
             VideoFilter::PadCuda { .. } => None,
+            VideoFilter::ScaleQsv { .. } => None,
             VideoFilter::Format { .. } => None,
 
             VideoFilter::CudaHwUploadFallback { .. } => {
@@ -147,7 +151,9 @@ impl VideoFilter {
             } => {
                 state.size = size.clone();
                 state.surface = FrameSurface::Cuda;
-                // TODO: anamorphic handling
+                state.is_anamorphic = false;
+                state.sample_aspect_ratio = Some(String::from("1:1"));
+                state.display_aspect_ratio = None;
             }
             VideoFilter::ScaleCuda { size: None, .. } => {}
             VideoFilter::FormatCuda { format } => {
@@ -166,6 +172,12 @@ impl VideoFilter {
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: None,
             } => {}
+            VideoFilter::ScaleQsv { size: Some(size) } => {
+                state.size = size.clone();
+                state.surface = FrameSurface::Qsv;
+                // TODO: anamorphic handling
+            }
+            VideoFilter::ScaleQsv { size: None } => {}
         }
     }
 
@@ -182,12 +194,17 @@ impl VideoFilter {
                     force_original_aspect_ratio,
                 },
                 Some(HardwareAccel::Cuda),
-            ) => {
-                if ffmpeg_info.has_video_filter(&KnownVideoFilter::ScaleCuda) {
-                    VideoFilter::ScaleCuda {
+            ) => VideoFilter::ScaleCuda {
+                size: size.clone(),
+                input_is_anamorphic: *input_is_anamorphic,
+                force_original_aspect_ratio: force_original_aspect_ratio.clone(),
+            },
+            (VideoFilter::Scale { size, .. }, Some(HardwareAccel::Qsv)) => {
+                if ffmpeg_info.has_video_filter(&KnownVideoFilter::VppQsv) {
+                    VideoFilter::ScaleQsv {
                         size: size.clone(),
-                        input_is_anamorphic: *input_is_anamorphic,
-                        force_original_aspect_ratio: force_original_aspect_ratio.clone(),
+                        //input_is_anamorphic: *input_is_anamorphic,
+                        //force_original_aspect_ratio: force_original_aspect_ratio.clone(),
                     }
                 } else {
                     self.clone()
@@ -217,6 +234,8 @@ impl VideoFilter {
             VideoFilter::FormatCuda { .. } => Some(FrameSurface::Cuda),
             VideoFilter::PadCuda { .. } => Some(FrameSurface::Cuda),
             VideoFilter::CudaHwUploadFallback { .. } => None,
+
+            VideoFilter::ScaleQsv { .. } => Some(FrameSurface::Qsv),
         }
     }
 
@@ -224,6 +243,7 @@ impl VideoFilter {
         match self {
             VideoFilter::HwUpload { target_surface } => match target_surface {
                 FrameSurface::Cuda => Some(String::from("hwupload_cuda")),
+                FrameSurface::Qsv => Some(String::from("hwupload=extra_hw_frames=64")),
                 _ => None,
             },
             VideoFilter::HwDownload {
@@ -297,6 +317,11 @@ impl VideoFilter {
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: None,
             } => None,
+            VideoFilter::ScaleQsv { size: Some(size) } => {
+                // TODO: anamorphic handling
+                Some(format!("vpp_qsv=w={}:h={}", size.width, size.height))
+            }
+            VideoFilter::ScaleQsv { size: None } => None,
         }
     }
 }

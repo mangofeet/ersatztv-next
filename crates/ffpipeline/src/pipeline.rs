@@ -62,6 +62,7 @@ pub(crate) struct OutputContext {
 pub enum FrameSurface {
     System,
     Cuda,
+    Qsv,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -233,6 +234,7 @@ impl Pipeline {
             media_frame_rate: video_stream.frame_rate.to_owned(),
             preferred_surface: match final_output_settings.accel {
                 Some(HardwareAccel::Cuda) => FrameSurface::Cuda,
+                Some(HardwareAccel::Qsv) => FrameSurface::Qsv,
                 // TODO: proper surfaces for other accels
                 _ => FrameSurface::System,
             },
@@ -247,6 +249,7 @@ impl Pipeline {
             global_options: vec![
                 GlobalOption::Threads(match final_output_settings.accel {
                     Some(HardwareAccel::Cuda) => 1,
+                    Some(HardwareAccel::Qsv) => 1,
                     _ => 0,
                 }),
                 GlobalOption::NoStdIn,
@@ -606,10 +609,16 @@ impl Pipeline {
         }
 
         for filter in &self.filter_chain.filters {
-            if let PipelineFilter::Video(video_filter) = filter
-                && let Some(FrameSurface::Cuda) = video_filter.required_surface()
-            {
-                return Some(HardwareAccel::Cuda);
+            if let PipelineFilter::Video(video_filter) = filter {
+                match video_filter.required_surface() {
+                    Some(FrameSurface::Cuda) => {
+                        return Some(HardwareAccel::Cuda);
+                    }
+                    Some(FrameSurface::Qsv) => {
+                        return Some(HardwareAccel::Qsv);
+                    }
+                    _ => {}
+                }
             }
         }
 

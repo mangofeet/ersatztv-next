@@ -21,6 +21,11 @@ impl VideoCodec {
                 10 => Some(PixelFormat::P010le),
                 _ => Some(PixelFormat::Nv12),
             },
+            VideoCodec::H264Qsv => Some(PixelFormat::Nv12),
+            VideoCodec::HevcQsv => match bit_depth {
+                10 => Some(PixelFormat::P010le),
+                _ => Some(PixelFormat::Nv12),
+            },
             _ => None,
         }
     }

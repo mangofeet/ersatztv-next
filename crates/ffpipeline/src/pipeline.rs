@@ -36,10 +36,11 @@ pub enum VideoFormat {
     Hevc,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HardwareAccel {
     Cuda,
     Qsv,
+    Vaapi { device: String },
     VideoToolbox,
 }
 
@@ -63,6 +64,7 @@ pub enum FrameSurface {
     System,
     Cuda,
     Qsv,
+    Vaapi,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,8 +163,8 @@ impl Pipeline {
 
         log::debug!("ffmpeg info: {:?}", ffmpeg_info);
 
-        if let Some(accel) = final_output_settings.accel
-            && !ffmpeg_info.has_hw_accel(&accel)
+        if let Some(accel) = &final_output_settings.accel
+            && !ffmpeg_info.has_hw_accel(accel)
         {
             log::warn!("ffmpeg does not support requested accel {:?}", accel);
             final_output_settings.accel = None;
@@ -182,13 +184,15 @@ impl Pipeline {
         };
 
         let video_codec = match (
-            final_output_settings.accel,
+            &final_output_settings.accel,
             final_output_settings.video_format,
         ) {
             (Some(HardwareAccel::Cuda), Some(VideoFormat::H264)) => VideoCodec::H264Nvenc,
             (Some(HardwareAccel::Cuda), Some(VideoFormat::Hevc)) => VideoCodec::HevcNvenc,
             (Some(HardwareAccel::Qsv), Some(VideoFormat::H264)) => VideoCodec::H264Qsv,
             (Some(HardwareAccel::Qsv), Some(VideoFormat::Hevc)) => VideoCodec::HevcQsv,
+            (Some(HardwareAccel::Vaapi { .. }), Some(VideoFormat::H264)) => VideoCodec::H264Vaapi,
+            (Some(HardwareAccel::Vaapi { .. }), Some(VideoFormat::Hevc)) => VideoCodec::HevcVaapi,
             (Some(HardwareAccel::VideoToolbox), Some(VideoFormat::H264)) => {
                 VideoCodec::H264VideoToolbox
             }
@@ -232,9 +236,10 @@ impl Pipeline {
             video_codec,
             pts_offset: final_output_settings.pts_offset,
             media_frame_rate: video_stream.frame_rate.to_owned(),
-            preferred_surface: match final_output_settings.accel {
+            preferred_surface: match &final_output_settings.accel {
                 Some(HardwareAccel::Cuda) => FrameSurface::Cuda,
                 Some(HardwareAccel::Qsv) => FrameSurface::Qsv,
+                Some(HardwareAccel::Vaapi { .. }) => FrameSurface::Vaapi,
                 // TODO: proper surfaces for other accels
                 _ => FrameSurface::System,
             },
@@ -244,12 +249,12 @@ impl Pipeline {
 
         Ok(Pipeline {
             ffmpeg_info,
-            accel: final_output_settings.accel,
+            accel: final_output_settings.accel.clone(),
             initial_state: initial_state.clone(),
             global_options: vec![
-                GlobalOption::Threads(match final_output_settings.accel {
-                    Some(HardwareAccel::Cuda) => 1,
-                    Some(HardwareAccel::Qsv) => 1,
+                // hardware accel should use a single thread
+                GlobalOption::Threads(match &final_output_settings.accel {
+                    Some(_) => 1,
                     _ => 0,
                 }),
                 GlobalOption::NoStdIn,
@@ -371,7 +376,7 @@ impl Pipeline {
         self.filter_chain.evaluate(&self.initial_state);
         self.filter_chain.resolve(
             &self.ffmpeg_info,
-            self.accel,
+            &self.accel,
             &self.initial_state,
             &self.output_context.preferred_surface,
             &self.output_context.preferred_pixel_format,
@@ -599,8 +604,9 @@ impl Pipeline {
 
     fn needs_hw_device(&self) -> Option<HardwareAccel> {
         let encoder_needs = match self.output_context.video_codec {
-            VideoCodec::H264Nvenc | VideoCodec::HevcNvenc => Some(HardwareAccel::Cuda),
-            VideoCodec::H264Qsv | VideoCodec::HevcQsv => Some(HardwareAccel::Qsv),
+            VideoCodec::H264Nvenc | VideoCodec::HevcNvenc => self.accel.clone(),
+            VideoCodec::H264Qsv | VideoCodec::HevcQsv => self.accel.clone(),
+            VideoCodec::H264Vaapi | VideoCodec::HevcVaapi => self.accel.clone(),
             _ => None,
         };
 
@@ -612,10 +618,13 @@ impl Pipeline {
             if let PipelineFilter::Video(video_filter) = filter {
                 match video_filter.required_surface() {
                     Some(FrameSurface::Cuda) => {
-                        return Some(HardwareAccel::Cuda);
+                        return self.accel.clone();
                     }
                     Some(FrameSurface::Qsv) => {
-                        return Some(HardwareAccel::Qsv);
+                        return self.accel.clone();
+                    }
+                    Some(FrameSurface::Vaapi) => {
+                        return self.accel.clone();
                     }
                     _ => {}
                 }

@@ -9,9 +9,7 @@ use ffpipeline::frame_rate::FrameRate;
 use ffpipeline::frame_size::FrameSize;
 use ffpipeline::input::{InputSettings, InputSource, ProbedInput};
 use ffpipeline::output_settings::OutputSettings;
-use ffpipeline::pipeline::{
-    AudioFormat, HardwareAccel, Kbps, PtsOffset, SEGMENT_SECONDS, VideoFormat,
-};
+use ffpipeline::pipeline::{AudioFormat, Kbps, PtsOffset, SEGMENT_SECONDS, VideoFormat};
 use ffpipeline::probe::ProbeResult;
 use ffpipeline::{pipeline, probe};
 use simple_expand_tilde::expand_tilde;
@@ -318,7 +316,10 @@ impl ChannelSession {
             video_bitrate: video_norm.bitrate_kbps.map(Kbps),
             video_buffer: video_norm.buffer_kbps.map(Kbps),
             video_size,
-            accel: video_norm.accel.clone().map(HardwareAccel::from),
+            accel: video_norm
+                .accel
+                .clone()
+                .and_then(|a| a.to_pipeline(&self.channel_config)),
             format: ffpipeline::output_format::OutputFormat::Hls {
                 playlist: self.output_file.clone(),
                 segment_template: self.output_segment_template.clone(),

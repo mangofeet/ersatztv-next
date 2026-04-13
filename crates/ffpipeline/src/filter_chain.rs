@@ -68,7 +68,7 @@ impl FilterChain {
     pub(crate) fn resolve(
         &mut self,
         ffmpeg_info: &FfmpegInfo,
-        accel: Option<HardwareAccel>,
+        accel: &Option<HardwareAccel>,
         initial_state: &FrameState,
         encoder_surface: &FrameSurface,
         encoder_pixel_format: &Option<PixelFormat>,
@@ -162,6 +162,9 @@ impl FilterChain {
                 }
                 FrameSurface::Qsv => {
                     // TODO: QSV format
+                }
+                FrameSurface::Vaapi => {
+                    // TODO: VAAPI format
                 }
                 FrameSurface::System => {
                     let format = VideoFilter::Format {

@@ -60,6 +60,12 @@ pub enum VideoFilter {
     ScaleQsv {
         size: Option<FrameSize>,
     },
+    ScaleVaapi {
+        size: Option<FrameSize>,
+    },
+    PadVaapi {
+        size: Option<FrameSize>,
+    },
 }
 
 impl VideoFilter {
@@ -73,6 +79,8 @@ impl VideoFilter {
             VideoFilter::FormatCuda { .. } => None,
             VideoFilter::PadCuda { .. } => None,
             VideoFilter::ScaleQsv { .. } => None,
+            VideoFilter::ScaleVaapi { .. } => None,
+            VideoFilter::PadVaapi { .. } => None,
             VideoFilter::Format { .. } => None,
 
             VideoFilter::CudaHwUploadFallback { .. } => {
@@ -178,12 +186,23 @@ impl VideoFilter {
                 // TODO: anamorphic handling
             }
             VideoFilter::ScaleQsv { size: None } => {}
+            VideoFilter::ScaleVaapi { size: Some(size) } => {
+                state.size = size.clone();
+                state.surface = FrameSurface::Vaapi;
+                // TODO: anamorphic handling
+            }
+            VideoFilter::ScaleVaapi { size: None } => {}
+            VideoFilter::PadVaapi { size: Some(size) } => {
+                state.size = size.clone();
+                state.surface = FrameSurface::Vaapi;
+            }
+            VideoFilter::PadVaapi { size: None } => {}
         }
     }
 
     pub(crate) fn best_for(
         &self,
-        accel: Option<HardwareAccel>,
+        accel: &Option<HardwareAccel>,
         ffmpeg_info: &FfmpegInfo,
     ) -> VideoFilter {
         match (self, accel) {
@@ -210,9 +229,27 @@ impl VideoFilter {
                     self.clone()
                 }
             }
+            (VideoFilter::Scale { size, .. }, Some(HardwareAccel::Vaapi { .. })) => {
+                if ffmpeg_info.has_video_filter(&KnownVideoFilter::ScaleVaapi) {
+                    VideoFilter::ScaleVaapi {
+                        size: size.clone(),
+                        //input_is_anamorphic: *input_is_anamorphic,
+                        //force_original_aspect_ratio: force_original_aspect_ratio.clone(),
+                    }
+                } else {
+                    self.clone()
+                }
+            }
             (VideoFilter::Pad { size }, Some(HardwareAccel::Cuda)) => {
                 if ffmpeg_info.has_video_filter(&KnownVideoFilter::PadCuda) {
                     VideoFilter::PadCuda { size: size.clone() }
+                } else {
+                    self.clone()
+                }
+            }
+            (VideoFilter::Pad { size }, Some(HardwareAccel::Vaapi { .. })) => {
+                if ffmpeg_info.has_video_filter(&KnownVideoFilter::PadVaapi) {
+                    VideoFilter::PadVaapi { size: size.clone() }
                 } else {
                     self.clone()
                 }
@@ -236,6 +273,9 @@ impl VideoFilter {
             VideoFilter::CudaHwUploadFallback { .. } => None,
 
             VideoFilter::ScaleQsv { .. } => Some(FrameSurface::Qsv),
+
+            VideoFilter::ScaleVaapi { .. } => Some(FrameSurface::Vaapi),
+            VideoFilter::PadVaapi { .. } => Some(FrameSurface::Vaapi),
         }
     }
 
@@ -244,6 +284,7 @@ impl VideoFilter {
             VideoFilter::HwUpload { target_surface } => match target_surface {
                 FrameSurface::Cuda => Some(String::from("hwupload_cuda")),
                 FrameSurface::Qsv => Some(String::from("hwupload=extra_hw_frames=64")),
+                FrameSurface::Vaapi => Some(String::from("hwupload")),
                 _ => None,
             },
             VideoFilter::HwDownload {
@@ -322,6 +363,16 @@ impl VideoFilter {
                 Some(format!("vpp_qsv=w={}:h={}", size.width, size.height))
             }
             VideoFilter::ScaleQsv { size: None } => None,
+            VideoFilter::ScaleVaapi { size: Some(size) } => {
+                // TODO: anamorphic handling
+                Some(format!("scale_vaapi=w={}:h={}", size.width, size.height))
+            }
+            VideoFilter::ScaleVaapi { size: None } => None,
+            VideoFilter::PadVaapi { size: Some(size) } => Some(format!(
+                "pad_vaapi={}:{}:-1:-1:color=black",
+                size.width, size.height
+            )),
+            VideoFilter::PadVaapi { size: None } => None,
         }
     }
 }

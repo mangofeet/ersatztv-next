@@ -33,5 +33,8 @@ bitrate_kbps = 2_000
 
 buffer_kbps = 4_000
 
-# `cuda`, `qsv` and `videotoolbox` accels are minimally supported at this point
+# `cuda`, `qsv`, `vaapi` and `videotoolbox` accels are minimally supported at this point
 #accel = "cuda"
+
+# when accel is `vaapi`, the path to the vaapi device is required
+#vaapi_device = "/dev/dri/renderD128"

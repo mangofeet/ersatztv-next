@@ -3,11 +3,13 @@ use tokio::process::Command;
 use crate::error::FFPipelineError;
 use crate::pipeline::HardwareAccel;
 
-static KNOWN_ACCELS: &[&str] = &["cuda", "qsv", "videotoolbox"];
-static KNOWN_FILTERS: &[&str] = &["pad_cuda", "vpp_qsv"];
+static KNOWN_ACCELS: &[&str] = &["cuda", "qsv", "vaapi", "videotoolbox"];
+static KNOWN_FILTERS: &[&str] = &["pad_cuda", "pad_vaapi", "scale_vaapi", "vpp_qsv"];
 
 pub enum KnownVideoFilter {
     PadCuda,
+    PadVaapi,
+    ScaleVaapi,
     VppQsv,
 }
 
@@ -31,6 +33,7 @@ impl FfmpegInfo {
         if let Some(accel_string) = match accel {
             HardwareAccel::Cuda => Some("cuda"),
             HardwareAccel::Qsv => Some("qsv"),
+            HardwareAccel::Vaapi { .. } => Some("vaapi"),
             _ => None,
         } {
             self.hwaccels.iter().any(|f| f == accel_string)
@@ -42,6 +45,8 @@ impl FfmpegInfo {
     pub fn has_video_filter(&self, filter: &KnownVideoFilter) -> bool {
         if let Some(filter_string) = match filter {
             KnownVideoFilter::PadCuda => Some("pad_cuda"),
+            KnownVideoFilter::PadVaapi => Some("pad_vaapi"),
+            KnownVideoFilter::ScaleVaapi => Some("scale_vaapi"),
             KnownVideoFilter::VppQsv => Some("vpp_qsv"),
         } {
             self.video_filters.iter().any(|f| f == filter_string)

@@ -66,6 +66,7 @@ pub struct VideoNormalizationConfig {
     pub bitrate_kbps: Option<u32>,
     pub buffer_kbps: Option<u32>,
     pub accel: Option<HardwareAccel>,
+    pub vaapi_device: Option<PathBuf>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -80,15 +81,36 @@ pub enum VideoFormat {
 pub enum HardwareAccel {
     Cuda,
     Qsv,
+    Vaapi,
     VideoToolbox,
 }
 
-impl From<HardwareAccel> for ffpipeline::pipeline::HardwareAccel {
-    fn from(value: HardwareAccel) -> Self {
-        match value {
-            HardwareAccel::Cuda => ffpipeline::pipeline::HardwareAccel::Cuda,
-            HardwareAccel::Qsv => ffpipeline::pipeline::HardwareAccel::Qsv,
-            HardwareAccel::VideoToolbox => ffpipeline::pipeline::HardwareAccel::VideoToolbox,
+impl HardwareAccel {
+    pub(crate) fn to_pipeline(
+        &self,
+        channel_config: &ChannelConfig,
+    ) -> Option<ffpipeline::pipeline::HardwareAccel> {
+        match self {
+            HardwareAccel::Cuda => Some(ffpipeline::pipeline::HardwareAccel::Cuda),
+            HardwareAccel::Qsv => Some(ffpipeline::pipeline::HardwareAccel::Qsv),
+            HardwareAccel::Vaapi => {
+                if let Some(vaapi_device) = &channel_config.normalization.video.vaapi_device {
+                    if vaapi_device.exists() {
+                        Some(ffpipeline::pipeline::HardwareAccel::Vaapi {
+                            device: vaapi_device.to_str()?.to_owned(),
+                        })
+                    } else {
+                        log::error!(
+                            "`vaapi_device` does not exist! channel will not use hardware accel"
+                        );
+                        None
+                    }
+                } else {
+                    log::error!("hardware accel `vaapi` requires `vaapi_device`");
+                    None
+                }
+            }
+            HardwareAccel::VideoToolbox => Some(ffpipeline::pipeline::HardwareAccel::VideoToolbox),
         }
     }
 }

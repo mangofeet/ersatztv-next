@@ -49,3 +49,6 @@ buffer_kbps = 4_000
 
 # when accel is `vaapi`, the path to the vaapi device is required
 #vaapi_device = "/dev/dri/renderD128"
+
+# when accel is `vaapi`, the vaapi driver name is required (iHD, i965, radeonsi)
+#vaapi_driver = "i965"

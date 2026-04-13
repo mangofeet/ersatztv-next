@@ -48,6 +48,10 @@ impl HwAccel for VideoToolbox {
         ]
     }
 
+    fn envs(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+
     fn ffmpeg_name(&self) -> &str {
         "videotoolbox"
     }

@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
 use crate::frame_size::FrameSize;
 use crate::hw_accel::HwAccel;
@@ -6,8 +8,26 @@ use crate::video_codec::VideoCodec;
 use crate::video_filter::{ForceOriginalAspectRatio, HwVideoFilter, VideoFilter};
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum VaapiDriver {
+    Ihd,
+    I965,
+    RadeonSI,
+}
+
+impl Display for VaapiDriver {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VaapiDriver::Ihd => write!(f, "ihd"),
+            VaapiDriver::I965 => write!(f, "i965"),
+            VaapiDriver::RadeonSI => write!(f, "radeonsi"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Vaapi {
     pub device: String,
+    pub driver: VaapiDriver,
 }
 
 impl HwAccel for Vaapi {
@@ -69,6 +89,10 @@ impl HwAccel for Vaapi {
             String::from("-hwaccel_output_format"),
             String::from("vaapi"),
         ]
+    }
+
+    fn envs(&self) -> Vec<(String, String)> {
+        vec![(String::from("LIBVA_DRIVER_NAME"), self.driver.to_string())]
     }
 
     fn ffmpeg_name(&self) -> &str {

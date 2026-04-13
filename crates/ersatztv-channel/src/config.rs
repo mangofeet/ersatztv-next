@@ -76,6 +76,25 @@ pub struct VideoNormalizationConfig {
     pub buffer_kbps: Option<u32>,
     pub accel: Option<HardwareAccel>,
     pub vaapi_device: Option<PathBuf>,
+    pub vaapi_driver: Option<VaapiDriver>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum VaapiDriver {
+    Ihd,
+    I965,
+    RadeonSI,
+}
+
+impl From<VaapiDriver> for ffpipeline::accel::vaapi::VaapiDriver {
+    fn from(value: VaapiDriver) -> Self {
+        match value {
+            VaapiDriver::Ihd => ffpipeline::accel::vaapi::VaapiDriver::Ihd,
+            VaapiDriver::I965 => ffpipeline::accel::vaapi::VaapiDriver::I965,
+            VaapiDriver::RadeonSI => ffpipeline::accel::vaapi::VaapiDriver::RadeonSI,
+        }
+    }
 }
 
 #[derive(Deserialize, Clone)]
@@ -107,11 +126,14 @@ impl HardwareAccel {
                 ffpipeline::accel::qsv::Qsv,
             )),
             HardwareAccel::Vaapi => {
-                if let Some(vaapi_device) = &channel_config.normalization.video.vaapi_device {
+                if let Some(vaapi_device) = &channel_config.normalization.video.vaapi_device
+                    && let Some(vaapi_driver) = &channel_config.normalization.video.vaapi_driver
+                {
                     if vaapi_device.exists() {
                         Some(ffpipeline::hw_accel::HardwareAccel::Vaapi(
                             ffpipeline::accel::vaapi::Vaapi {
                                 device: vaapi_device.to_str()?.to_owned(),
+                                driver: vaapi_driver.clone().into(),
                             },
                         ))
                     } else {
@@ -121,7 +143,9 @@ impl HardwareAccel {
                         None
                     }
                 } else {
-                    log::error!("hardware accel `vaapi` requires `vaapi_device`");
+                    log::error!(
+                        "hardware accel `vaapi` requires `vaapi_device` and `vaapi_driver`"
+                    );
                     None
                 }
             }

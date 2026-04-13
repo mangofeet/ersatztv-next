@@ -466,6 +466,16 @@ impl Pipeline {
         result
     }
 
+    pub fn envs(&self) -> Vec<(String, String)> {
+        let mut result: Vec<(String, String)> = Vec::new();
+
+        if let Some(a) = &self.accel {
+            result.extend(a.envs())
+        }
+
+        result
+    }
+
     fn select_video_stream(
         input_settings: &InputSettings,
     ) -> Result<&ProbeResultVideoStream, FFPipelineError> {

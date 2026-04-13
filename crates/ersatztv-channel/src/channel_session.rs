@@ -424,6 +424,7 @@ impl ChannelSession {
             pipeline::generate_pipeline(&self.ffmpeg_info, input_settings, output_settings)?;
         pipeline_result.optimize();
         let args = pipeline_result.args();
+        let envs = pipeline_result.envs();
         log::debug!("optimized pipeline: {}", args.join(" "));
 
         self.playlist_manager
@@ -435,6 +436,7 @@ impl ChannelSession {
         // stream current item
         let mut ffmpeg_child = tokio::process::Command::new(&self.ffmpeg_path)
             .args(args)
+            .envs(envs)
             .stdout(std::process::Stdio::null())
             .spawn()
             .map_err(|_| ChannelError::StreamFailure(String::from("failed to spawn ffmpeg")))?;

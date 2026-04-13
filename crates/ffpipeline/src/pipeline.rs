@@ -65,6 +65,7 @@ pub enum FrameSurface {
     Cuda,
     Qsv,
     Vaapi,
+    VideoToolbox,
 }
 
 #[derive(Debug, Clone, PartialEq)]

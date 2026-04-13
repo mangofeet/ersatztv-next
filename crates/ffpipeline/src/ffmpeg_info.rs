@@ -39,7 +39,7 @@ impl FfmpegInfo {
             HardwareAccel::Cuda => Some("cuda"),
             HardwareAccel::Qsv => Some("qsv"),
             HardwareAccel::Vaapi { .. } => Some("vaapi"),
-            _ => None,
+            HardwareAccel::VideoToolbox => Some("videotoolbox"),
         } {
             self.hwaccels.iter().any(|f| f == accel_string)
         } else {

@@ -166,6 +166,9 @@ impl FilterChain {
                 FrameSurface::Vaapi => {
                     // TODO: VAAPI format
                 }
+                FrameSurface::VideoToolbox => {
+                    // TODO: VideoToolbox format
+                }
                 FrameSurface::System => {
                     let format = VideoFilter::Format {
                         format: pixel_format.to_owned(),

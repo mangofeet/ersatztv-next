@@ -48,8 +48,7 @@ impl VideoDecoder {
                 HardwareAccel::Cuda => FrameSurface::Cuda,
                 HardwareAccel::Qsv => FrameSurface::Qsv,
                 HardwareAccel::Vaapi { .. } => FrameSurface::Vaapi,
-                // TODO: other accels
-                _ => FrameSurface::System,
+                HardwareAccel::VideoToolbox => FrameSurface::VideoToolbox,
             },
         }
     }
@@ -71,7 +70,10 @@ impl VideoDecoder {
                     10 => PixelFormat::P010le,
                     _ => PixelFormat::Nv12,
                 },
-                _ => source_pixel_format.clone(),
+                HardwareAccel::VideoToolbox => match source_pixel_format.bit_depth() {
+                    10 => PixelFormat::P010le,
+                    _ => PixelFormat::Nv12,
+                },
             },
         }
     }
@@ -107,7 +109,14 @@ impl VideoDecoder {
                         String::from("vaapi"),
                     ]
                 }
-                _ => Vec::new(),
+                HardwareAccel::VideoToolbox => {
+                    vec![
+                        String::from("-hwaccel"),
+                        String::from("videotoolbox"),
+                        String::from("-hwaccel_output_format"),
+                        String::from("videotoolbox_vld"),
+                    ]
+                }
             },
         }
     }
@@ -121,6 +130,8 @@ impl VideoDecoder {
             (HardwareAccel::Qsv, 8) => matches!(codec, "h264" | "hevc"),
             (HardwareAccel::Vaapi { .. }, 10) => matches!(codec, "hevc"),
             (HardwareAccel::Vaapi { .. }, 8) => matches!(codec, "h264" | "hevc"),
+            (HardwareAccel::VideoToolbox, 10) => matches!(codec, "hevc"),
+            (HardwareAccel::VideoToolbox, 8) => matches!(codec, "h264" | "hevc"),
             _ => false,
         }
     }

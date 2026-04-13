@@ -1,3 +1,4 @@
+use crate::filter_chain::PipelineFilter;
 use crate::hw_accel::{HardwareAccel, HwAccel};
 use crate::output_settings::OutputSettings;
 use crate::pipeline::{FrameSurface, PixelFormat};
@@ -34,10 +35,10 @@ impl VideoDecoder {
         }
     }
 
-    pub(crate) fn is_hardware(&self, hardware_accel: HardwareAccel) -> bool {
+    pub(crate) fn filters(&self) -> Vec<PipelineFilter> {
         match self {
-            VideoDecoder::HardwareAccel { accel } => accel == &hardware_accel,
-            _ => false,
+            VideoDecoder::HardwareAccel { accel } => accel.decoder_filters(),
+            _ => Vec::new(),
         }
     }
 

@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
+use crate::filter_chain::PipelineFilter;
 use crate::frame_size::FrameSize;
 use crate::hw_accel::HwAccel;
 use crate::pipeline::{FrameState, FrameSurface, PixelFormat, VideoFormat};
@@ -91,6 +92,10 @@ impl HwAccel for Vaapi {
         ]
     }
 
+    fn decoder_filters(&self) -> Vec<PipelineFilter> {
+        Vec::new()
+    }
+
     fn envs(&self) -> Vec<(String, String)> {
         vec![(String::from("LIBVA_DRIVER_NAME"), self.driver.to_string())]
     }
@@ -127,6 +132,11 @@ struct ScaleVaapi {
 }
 
 impl HwVideoFilter for ScaleVaapi {
+    fn evaluate(&self, _state: &FrameState) -> Option<VideoFilter> {
+        // called before this is used
+        None
+    }
+
     fn apply_to(&self, state: &mut FrameState) {
         if let Some(size) = &self.size {
             state.size = size.clone();
@@ -171,6 +181,11 @@ struct PadVaapi {
 }
 
 impl HwVideoFilter for PadVaapi {
+    fn evaluate(&self, _state: &FrameState) -> Option<VideoFilter> {
+        // called before this is used
+        None
+    }
+
     fn apply_to(&self, state: &mut FrameState) {
         if let Some(size) = &self.size {
             state.size = size.clone();

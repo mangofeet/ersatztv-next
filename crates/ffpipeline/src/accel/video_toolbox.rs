@@ -1,4 +1,5 @@
 use crate::ffmpeg_info::FfmpegInfo;
+use crate::filter_chain::PipelineFilter;
 use crate::hw_accel::HwAccel;
 use crate::pipeline::{FrameSurface, PixelFormat, VideoFormat};
 use crate::video_codec::VideoCodec;
@@ -46,6 +47,10 @@ impl HwAccel for VideoToolbox {
             String::from("-hwaccel_output_format"),
             String::from("videotoolbox_vld"),
         ]
+    }
+
+    fn decoder_filters(&self) -> Vec<PipelineFilter> {
+        Vec::new()
     }
 
     fn envs(&self) -> Vec<(String, String)> {

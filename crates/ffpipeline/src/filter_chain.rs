@@ -5,7 +5,7 @@ use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
 use crate::video_filter::VideoFilter;
 
 #[derive(Clone)]
-pub(crate) enum PipelineFilter {
+pub enum PipelineFilter {
     Audio(AudioFilter),
     Video(VideoFilter),
 }

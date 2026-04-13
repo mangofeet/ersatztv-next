@@ -1,4 +1,5 @@
 use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
+use crate::filter_chain::PipelineFilter;
 use crate::frame_size::FrameSize;
 use crate::hw_accel::HwAccel;
 use crate::pipeline::{FrameState, FrameSurface, PixelFormat, VideoFormat};
@@ -60,6 +61,10 @@ impl HwAccel for Qsv {
         ]
     }
 
+    fn decoder_filters(&self) -> Vec<PipelineFilter> {
+        Vec::new()
+    }
+
     fn envs(&self) -> Vec<(String, String)> {
         Vec::new()
     }
@@ -99,6 +104,11 @@ struct ScaleQsv {
 }
 
 impl HwVideoFilter for ScaleQsv {
+    fn evaluate(&self, _state: &FrameState) -> Option<VideoFilter> {
+        // called before this is used
+        None
+    }
+
     fn apply_to(&self, state: &mut FrameState) {
         if let Some(size) = &self.size {
             state.size = size.clone();

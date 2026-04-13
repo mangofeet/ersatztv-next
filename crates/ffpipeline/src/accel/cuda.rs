@@ -1,4 +1,5 @@
 use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
+use crate::filter_chain::PipelineFilter;
 use crate::frame_size::FrameSize;
 use crate::hw_accel::HwAccel;
 use crate::pipeline::{FrameState, FrameSurface, PixelFormat, VideoFormat};
@@ -67,6 +68,12 @@ impl HwAccel for Cuda {
         ]
     }
 
+    fn decoder_filters(&self) -> Vec<PipelineFilter> {
+        vec![PipelineFilter::Video(VideoFilter::Hardware(Box::new(
+            HwUploadCudaWorkaround,
+        )))]
+    }
+
     fn envs(&self) -> Vec<(String, String)> {
         Vec::new()
     }
@@ -105,6 +112,11 @@ struct ScaleCuda {
 }
 
 impl HwVideoFilter for ScaleCuda {
+    fn evaluate(&self, _state: &FrameState) -> Option<VideoFilter> {
+        // called before this is used
+        None
+    }
+
     fn apply_to(&self, state: &mut FrameState) {
         if let Some(size) = &self.size {
             state.size = size.clone();
@@ -149,6 +161,11 @@ struct PadCuda {
 }
 
 impl HwVideoFilter for PadCuda {
+    fn evaluate(&self, _state: &FrameState) -> Option<VideoFilter> {
+        // called before this is used
+        None
+    }
+
     fn apply_to(&self, state: &mut FrameState) {
         if let Some(size) = &self.size {
             state.size = size.clone();
@@ -176,6 +193,11 @@ struct FormatCuda {
 }
 
 impl HwVideoFilter for FormatCuda {
+    fn evaluate(&self, _state: &FrameState) -> Option<VideoFilter> {
+        // called before this is used
+        None
+    }
+
     fn apply_to(&self, state: &mut FrameState) {
         state.pixel_format = self.format.clone();
     }
@@ -186,5 +208,26 @@ impl HwVideoFilter for FormatCuda {
 
     fn as_arg(&self) -> Option<String> {
         Some(format!("scale_cuda=format={}", self.format.as_arg()))
+    }
+}
+
+#[derive(Clone)]
+struct HwUploadCudaWorkaround;
+
+impl HwVideoFilter for HwUploadCudaWorkaround {
+    fn evaluate(&self, _state: &FrameState) -> Option<VideoFilter> {
+        // we always need to keep this filter
+        Some(VideoFilter::Hardware(Box::new(self.clone())))
+    }
+
+    fn apply_to(&self, _state: &mut FrameState) {}
+
+    fn required_surface(&self) -> FrameSurface {
+        // saying cuda because we don't want the pipeline to download before uploading
+        FrameSurface::Cuda
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        Some(String::from("hwupload"))
     }
 }

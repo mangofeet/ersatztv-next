@@ -232,6 +232,27 @@ impl Pipeline {
             preferred_pixel_format,
         };
 
+        let mut filters = vec![
+            PipelineFilter::Audio(AudioFilter::Resample),
+            PipelineFilter::Audio(AudioFilter::Pad),
+        ];
+
+        filters.extend(video_decoder.filters());
+
+        filters.extend([
+            PipelineFilter::Video(VideoFilter::Loop {
+                codec: video_stream.codec.to_owned(),
+            }),
+            PipelineFilter::Video(VideoFilter::Scale {
+                size: initial_scaled_size,
+                input_is_anamorphic: initial_state.is_anamorphic,
+                force_original_aspect_ratio: None,
+            }),
+            PipelineFilter::Video(VideoFilter::Pad {
+                size: final_output_settings.video_size.to_owned(),
+            }),
+        ]);
+
         Ok(Pipeline {
             ffmpeg_info: ffmpeg_info.clone(),
             accel: final_output_settings.accel.clone(),
@@ -265,24 +286,7 @@ impl Pipeline {
                     decoder: video_decoder,
                 },
             ],
-            filter_chain: FilterChain::new(vec![
-                PipelineFilter::Audio(AudioFilter::Resample),
-                PipelineFilter::Audio(AudioFilter::Pad),
-                PipelineFilter::Video(VideoFilter::CudaHwUploadFallback {
-                    target_pixel_format: output_context.preferred_pixel_format.clone(),
-                }),
-                PipelineFilter::Video(VideoFilter::Loop {
-                    codec: video_stream.codec.to_owned(),
-                }),
-                PipelineFilter::Video(VideoFilter::Scale {
-                    size: initial_scaled_size,
-                    input_is_anamorphic: initial_state.is_anamorphic,
-                    force_original_aspect_ratio: None,
-                }),
-                PipelineFilter::Video(VideoFilter::Pad {
-                    size: final_output_settings.video_size.to_owned(),
-                }),
-            ]),
+            filter_chain: FilterChain::new(filters),
             output_options: vec![
                 OutputOption::NoDemuxDecodeDelay,
                 OutputOption::MovFlagsFastStart,
@@ -340,22 +344,6 @@ impl Pipeline {
             });
 
             self.filter_chain.disable_video();
-        }
-
-        // remove cuda workaround when not cuda
-        let is_cuda_decoder = self
-            .inputs
-            .iter()
-            .find_map(|s| match s {
-                PipelineInput::Video { decoder, .. } => {
-                    Some(decoder.is_hardware(HardwareAccel::Cuda(crate::accel::cuda::Cuda)))
-                }
-                _ => None,
-            })
-            .unwrap_or(false);
-        if !is_cuda_decoder {
-            self.output_options
-                .retain(|o| !matches!(o, OutputOption::CudaNoAutoScale));
         }
 
         self.filter_chain.evaluate(&self.initial_state);

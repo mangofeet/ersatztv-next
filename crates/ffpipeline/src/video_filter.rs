@@ -23,6 +23,7 @@ impl ForceOriginalAspectRatio {
 }
 
 pub trait HwVideoFilter: DynClone {
+    fn evaluate(&self, state: &FrameState) -> Option<VideoFilter>;
     fn apply_to(&self, state: &mut FrameState);
     fn required_surface(&self) -> FrameSurface;
     fn as_arg(&self) -> Option<String>;
@@ -53,9 +54,6 @@ pub enum VideoFilter {
         format: PixelFormat,
     },
     Hardware(Box<dyn HwVideoFilter>),
-    CudaHwUploadFallback {
-        target_pixel_format: Option<PixelFormat>,
-    },
 }
 
 impl VideoFilter {
@@ -67,15 +65,7 @@ impl VideoFilter {
             VideoFilter::HwDownload { .. } => None,
             VideoFilter::Format { .. } => None,
 
-            VideoFilter::Hardware(_) => None,
-
-            VideoFilter::CudaHwUploadFallback { .. } => {
-                if state.surface == FrameSurface::Cuda {
-                    Some(self.clone())
-                } else {
-                    None
-                }
-            }
+            VideoFilter::Hardware(filter) => filter.evaluate(state),
 
             VideoFilter::Scale {
                 size: Some(target), ..
@@ -143,14 +133,6 @@ impl VideoFilter {
             VideoFilter::Format { format } => {
                 state.pixel_format = format.clone();
             }
-            VideoFilter::CudaHwUploadFallback {
-                target_pixel_format: Some(format),
-            } => {
-                state.pixel_format = format.clone();
-            }
-            VideoFilter::CudaHwUploadFallback {
-                target_pixel_format: None,
-            } => {}
         }
     }
 
@@ -164,8 +146,6 @@ impl VideoFilter {
             VideoFilter::Pad { .. } => Some(FrameSurface::System),
             VideoFilter::Loop { .. } => Some(FrameSurface::System),
             VideoFilter::Format { .. } => Some(FrameSurface::System),
-
-            VideoFilter::CudaHwUploadFallback { .. } => None,
         }
     }
 
@@ -213,12 +193,6 @@ impl VideoFilter {
             VideoFilter::Pad { .. } => None,
             VideoFilter::Loop { .. } => Some(String::from("loop=-1:1")),
             VideoFilter::Format { format } => Some(format!("format={}", format.as_arg())),
-            VideoFilter::CudaHwUploadFallback {
-                target_pixel_format: Some(_format),
-            } => Some(String::from("hwupload")),
-            VideoFilter::CudaHwUploadFallback {
-                target_pixel_format: None,
-            } => None,
         }
     }
 }

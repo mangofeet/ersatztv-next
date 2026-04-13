@@ -160,7 +160,7 @@ async fn run() -> Result<(), PlayoutGeneratorError> {
 
     let output_path = args.output_folder.join(&output_file);
     let playout = Playout::new(playout_items);
-    let output_string = serde_json::to_string(&playout)?;
+    let output_string = serde_json::to_string_pretty(&playout)?;
     tokio::fs::write(&output_path, output_string).await?;
 
     Ok(())

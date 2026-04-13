@@ -62,6 +62,8 @@ pub enum VideoFilter {
     },
     ScaleVaapi {
         size: Option<FrameSize>,
+        input_is_anamorphic: bool,
+        force_original_aspect_ratio: Option<ForceOriginalAspectRatio>,
     },
     PadVaapi {
         size: Option<FrameSize>,
@@ -186,12 +188,16 @@ impl VideoFilter {
                 // TODO: anamorphic handling
             }
             VideoFilter::ScaleQsv { size: None } => {}
-            VideoFilter::ScaleVaapi { size: Some(size) } => {
+            VideoFilter::ScaleVaapi {
+                size: Some(size), ..
+            } => {
                 state.size = size.clone();
                 state.surface = FrameSurface::Vaapi;
-                // TODO: anamorphic handling
+                state.is_anamorphic = false;
+                state.sample_aspect_ratio = Some(String::from("1:1"));
+                state.display_aspect_ratio = None;
             }
-            VideoFilter::ScaleVaapi { size: None } => {}
+            VideoFilter::ScaleVaapi { size: None, .. } => {}
             VideoFilter::PadVaapi { size: Some(size) } => {
                 state.size = size.clone();
                 state.surface = FrameSurface::Vaapi;
@@ -229,12 +235,19 @@ impl VideoFilter {
                     self.clone()
                 }
             }
-            (VideoFilter::Scale { size, .. }, Some(HardwareAccel::Vaapi { .. })) => {
+            (
+                VideoFilter::Scale {
+                    size,
+                    input_is_anamorphic,
+                    force_original_aspect_ratio,
+                },
+                Some(HardwareAccel::Vaapi { .. }),
+            ) => {
                 if ffmpeg_info.has_video_filter(&KnownVideoFilter::ScaleVaapi) {
                     VideoFilter::ScaleVaapi {
                         size: size.clone(),
-                        //input_is_anamorphic: *input_is_anamorphic,
-                        //force_original_aspect_ratio: force_original_aspect_ratio.clone(),
+                        input_is_anamorphic: *input_is_anamorphic,
+                        force_original_aspect_ratio: force_original_aspect_ratio.clone(),
                     }
                 } else {
                     self.clone()
@@ -363,11 +376,28 @@ impl VideoFilter {
                 Some(format!("vpp_qsv=w={}:h={}", size.width, size.height))
             }
             VideoFilter::ScaleQsv { size: None } => None,
-            VideoFilter::ScaleVaapi { size: Some(size) } => {
-                // TODO: anamorphic handling
-                Some(format!("scale_vaapi=w={}:h={}", size.width, size.height))
+            VideoFilter::ScaleVaapi {
+                size: Some(size),
+                input_is_anamorphic,
+                force_original_aspect_ratio,
+            } => {
+                let aspect_ratio = force_original_aspect_ratio
+                    .as_ref()
+                    .map_or(String::new(), |f| f.as_arg());
+
+                if *input_is_anamorphic {
+                    Some(format!(
+                        "scale_vaapi=iw*sar:ih,setsar=1,scale_vaapi={}:{}{}:force_divisible_by=2",
+                        size.width, size.height, aspect_ratio
+                    ))
+                } else {
+                    Some(format!(
+                        "scale_vaapi={}:{}{}:force_divisible_by=2,setsar=1",
+                        size.width, size.height, aspect_ratio
+                    ))
+                }
             }
-            VideoFilter::ScaleVaapi { size: None } => None,
+            VideoFilter::ScaleVaapi { size: None, .. } => None,
             VideoFilter::PadVaapi { size: Some(size) } => Some(format!(
                 "pad_vaapi={}:{}:-1:-1:color=black",
                 size.width, size.height

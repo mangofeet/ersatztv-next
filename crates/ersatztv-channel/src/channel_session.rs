@@ -62,6 +62,7 @@ pub struct ChannelSession {
     output_file: String,
     output_segment_template: String,
 
+    start_time_offset: time::Duration,
     state: ChannelSessionState,
 
     timeout_notify: Arc<tokio::sync::Notify>,
@@ -70,6 +71,12 @@ pub struct ChannelSession {
 impl ChannelSession {
     pub fn new(channel_config: ChannelConfig) -> Result<ChannelSession, ChannelError> {
         let now = OffsetDateTime::now_local()?;
+
+        let start_time_offset = if let Some(virtual_start) = channel_config.playout.virtual_start {
+            virtual_start - now
+        } else {
+            time::Duration::ZERO
+        };
 
         let output_folder = channel_config.expanded_output_folder().to_owned();
         let generated_output_file = output_folder
@@ -96,7 +103,7 @@ impl ChannelSession {
         let pts_scanner = PtsScanner::new(&channel_config);
         let playlist_manager = PlaylistManager::new(
             now,
-            pipeline::SEGMENT_SECONDS,
+            SEGMENT_SECONDS,
             output_folder.to_owned(),
             ready_file.to_owned(),
             generated_output_file,
@@ -110,10 +117,11 @@ impl ChannelSession {
             playout_loader,
             pts_scanner,
             playlist_manager,
-            transcoded_until: now,
+            transcoded_until: now + start_time_offset,
             ready_file,
             output_file: ffmpeg_output_file,
             output_segment_template,
+            start_time_offset,
             state: ChannelSessionState::SeekAndWorkAhead,
             timeout_notify: Arc::new(tokio::sync::Notify::new()),
         })
@@ -153,9 +161,9 @@ impl ChannelSession {
                 ));
             }
 
-            let now = OffsetDateTime::now_local()?;
+            let now = OffsetDateTime::now_local()? + self.start_time_offset;
             let transcoded_buffer =
-                std::cmp::max(time::Duration::new(0, 0), self.transcoded_until - now);
+                std::cmp::max(time::Duration::ZERO, self.transcoded_until - now);
             log::debug!(
                 "transcoded buffer: {}m {}s",
                 transcoded_buffer.whole_minutes(),

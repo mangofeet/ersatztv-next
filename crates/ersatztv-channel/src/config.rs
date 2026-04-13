@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 use simple_expand_tilde::expand_tilde;
+use time::OffsetDateTime;
 
 use crate::error::ChannelError;
 
@@ -23,6 +24,8 @@ pub struct ChannelConfig {
 #[derive(Deserialize, Clone)]
 pub struct PlayoutConfig {
     pub folder: String,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub virtual_start: Option<OffsetDateTime>,
 }
 
 #[derive(Deserialize, Clone)]

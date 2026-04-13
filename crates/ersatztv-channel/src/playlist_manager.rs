@@ -79,9 +79,12 @@ impl PlaylistManager {
 
         self.pending_discontinuity = true;
 
-        // overwrite ffmpeg's playlist with our generated playlist
+        // overwrite ffmpeg's playlist with a generated playlist (containing *all* segments)
         if Path::new(&self.generated_playlist_file).exists() {
-            tokio::fs::copy(&self.generated_playlist_file, &self.ffmpeg_playlist_file).await?;
+            let generated_playlist = self.generate_playlist(None)?;
+            let temp = tempfile::NamedTempFile::new()?;
+            tokio::fs::write(temp.path(), generated_playlist).await?;
+            tokio::fs::rename(temp.path(), &self.ffmpeg_playlist_file).await?;
         }
 
         Ok(())
@@ -155,7 +158,7 @@ impl PlaylistManager {
         }
 
         // generate and atomically save playlist
-        let generated_playlist = self.generate_playlist()?;
+        let generated_playlist = self.generate_playlist(Some(10))?;
         let temp = tempfile::NamedTempFile::new()?;
         tokio::fs::write(temp.path(), generated_playlist).await?;
         tokio::fs::rename(temp.path(), &self.generated_playlist_file).await?;
@@ -174,16 +177,42 @@ impl PlaylistManager {
         Ok(())
     }
 
-    fn generate_playlist(&self) -> Result<String, ChannelError> {
+    fn generate_playlist(&self, max_segments: Option<usize>) -> Result<String, ChannelError> {
         let mut playlist = String::new();
         playlist.push_str("#EXTM3U\n");
         playlist.push_str("#EXT-X-VERSION:7\n");
         playlist.push_str(&format!("#EXT-X-TARGETDURATION:{}\n", self.target_duration));
-        playlist.push_str(&format!("#EXT-X-MEDIA-SEQUENCE:{}\n", self.media_sequence));
-        if self.discontinuity_sequence > 0 {
+
+        let (skip, limit) = match max_segments {
+            Some(max) => {
+                let anchor = OffsetDateTime::now_utc()
+                    - Duration::from_secs(ffpipeline::pipeline::SEGMENT_SECONDS as u64 * 5u64);
+                let start = self
+                    .segments
+                    .iter()
+                    .position(|s| s.program_date_time >= anchor)
+                    .unwrap_or(0);
+                (start, max)
+            }
+            None => (0, self.segments.len()),
+        };
+        let effective_media_sequence = self.media_sequence + skip as u64;
+        let effective_discontinuity_sequence = self.discontinuity_sequence
+            + self
+                .segments
+                .iter()
+                .take(skip)
+                .filter(|s| self.discontinuity_before.contains(&s.path))
+                .count() as u64;
+
+        playlist.push_str(&format!(
+            "#EXT-X-MEDIA-SEQUENCE:{}\n",
+            effective_media_sequence
+        ));
+        if effective_discontinuity_sequence > 0 {
             playlist.push_str(&format!(
                 "#EXT-X-DISCONTINUITY-SEQUENCE:{}\n",
-                self.discontinuity_sequence
+                effective_discontinuity_sequence
             ));
         }
         playlist.push_str("#EXT-X-INDEPENDENT-SEGMENTS\n");
@@ -192,7 +221,7 @@ impl PlaylistManager {
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3][offset_hour sign:mandatory][offset_minute]"
         );
 
-        for segment in &self.segments {
+        for segment in self.segments.iter().skip(skip).take(limit) {
             if self.discontinuity_before.contains(&segment.path) {
                 playlist.push_str("#EXT-X-DISCONTINUITY\n");
             }

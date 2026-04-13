@@ -24,7 +24,7 @@ pub struct ChannelConfig {
 #[derive(Deserialize, Clone)]
 pub struct PlayoutConfig {
     pub folder: String,
-    #[serde(with = "time::serde::rfc3339::option")]
+    #[serde(default, with = "time::serde::rfc3339::option")]
     pub virtual_start: Option<OffsetDateTime>,
 }
 

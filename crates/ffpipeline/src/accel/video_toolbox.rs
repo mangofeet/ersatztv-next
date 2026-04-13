@@ -52,6 +52,10 @@ impl HwAccel for VideoToolbox {
         "videotoolbox"
     }
 
+    fn format_filter(&self, _pixel_format: &PixelFormat) -> Option<VideoFilter> {
+        None
+    }
+
     fn frame_surface(&self) -> FrameSurface {
         FrameSurface::VideoToolbox
     }

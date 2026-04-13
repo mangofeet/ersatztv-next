@@ -10,6 +10,7 @@ pub trait HwAccel {
     fn codec_for_format(&self, format: &VideoFormat) -> VideoCodec;
     fn decoder_arg(&self) -> Vec<String>;
     fn ffmpeg_name(&self) -> &str;
+    fn format_filter(&self, pixel_format: &PixelFormat) -> Option<VideoFilter>;
     fn frame_surface(&self) -> FrameSurface;
     fn init_hw_device(&self) -> Vec<String>;
     fn output_format(&self, source_pixel_format: &PixelFormat) -> PixelFormat;
@@ -68,6 +69,16 @@ impl HwAccel for HardwareAccel {
             Self::VideoToolbox(a) => a.ffmpeg_name(),
         }
     }
+
+    fn format_filter(&self, pixel_format: &PixelFormat) -> Option<VideoFilter> {
+        match self {
+            Self::Cuda(a) => a.format_filter(pixel_format),
+            Self::Qsv(a) => a.format_filter(pixel_format),
+            Self::Vaapi(a) => a.format_filter(pixel_format),
+            Self::VideoToolbox(a) => a.format_filter(pixel_format),
+        }
+    }
+
     fn frame_surface(&self) -> FrameSurface {
         match self {
             Self::Cuda(a) => a.frame_surface(),

@@ -1,8 +1,9 @@
 use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
+use crate::frame_size::FrameSize;
 use crate::hw_accel::HwAccel;
-use crate::pipeline::{FrameSurface, PixelFormat, VideoFormat};
+use crate::pipeline::{FrameState, FrameSurface, PixelFormat, VideoFormat};
 use crate::video_codec::VideoCodec;
-use crate::video_filter::VideoFilter;
+use crate::video_filter::{ForceOriginalAspectRatio, HwVideoFilter, VideoFilter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cuda;
@@ -15,16 +16,16 @@ impl HwAccel for Cuda {
                 input_is_anamorphic,
                 force_original_aspect_ratio,
             } if ffmpeg_info.has_video_filter(&KnownVideoFilter::ScaleCuda) => {
-                VideoFilter::ScaleCuda {
+                VideoFilter::Hardware(Box::new(ScaleCuda {
                     size: size.clone(),
                     input_is_anamorphic: *input_is_anamorphic,
                     force_original_aspect_ratio: force_original_aspect_ratio.clone(),
-                }
+                }))
             }
             VideoFilter::Pad { size }
                 if ffmpeg_info.has_video_filter(&KnownVideoFilter::PadCuda) =>
             {
-                VideoFilter::PadCuda { size: size.clone() }
+                VideoFilter::Hardware(Box::new(PadCuda { size: size.clone() }))
             }
             _ => video_filter.clone(),
         }
@@ -70,6 +71,12 @@ impl HwAccel for Cuda {
         "cuda"
     }
 
+    fn format_filter(&self, pixel_format: &PixelFormat) -> Option<VideoFilter> {
+        Some(VideoFilter::Hardware(Box::new(FormatCuda {
+            format: pixel_format.clone(),
+        })))
+    }
+
     fn frame_surface(&self) -> FrameSurface {
         FrameSurface::Cuda
     }
@@ -83,5 +90,97 @@ impl HwAccel for Cuda {
             10 => PixelFormat::P010le,
             _ => PixelFormat::Nv12,
         }
+    }
+}
+
+#[derive(Clone)]
+struct ScaleCuda {
+    size: Option<FrameSize>,
+    input_is_anamorphic: bool,
+    force_original_aspect_ratio: Option<ForceOriginalAspectRatio>,
+}
+
+impl HwVideoFilter for ScaleCuda {
+    fn apply_to(&self, state: &mut FrameState) {
+        if let Some(size) = &self.size {
+            state.size = size.clone();
+            state.surface = FrameSurface::Cuda;
+            state.is_anamorphic = false;
+            state.sample_aspect_ratio = Some(String::from("1:1"));
+            state.display_aspect_ratio = None;
+        }
+    }
+
+    fn required_surface(&self) -> FrameSurface {
+        FrameSurface::Cuda
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        if let Some(size) = &self.size {
+            let aspect_ratio = self
+                .force_original_aspect_ratio
+                .as_ref()
+                .map_or(String::new(), |f| f.as_arg());
+
+            if self.input_is_anamorphic {
+                Some(format!(
+                    "scale_cuda=iw*sar:ih,setsar=1,scale_cuda={}:{}{}",
+                    size.width, size.height, aspect_ratio
+                ))
+            } else {
+                Some(format!(
+                    "scale_cuda={}:{}{},setsar=1",
+                    size.width, size.height, aspect_ratio
+                ))
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PadCuda {
+    size: Option<FrameSize>,
+}
+
+impl HwVideoFilter for PadCuda {
+    fn apply_to(&self, state: &mut FrameState) {
+        if let Some(size) = &self.size {
+            state.size = size.clone();
+            state.surface = FrameSurface::Cuda;
+        }
+    }
+
+    fn required_surface(&self) -> FrameSurface {
+        FrameSurface::Cuda
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        self.size.as_ref().map(|s| {
+            format!(
+                "pad_cuda={}:{}:-1:-1:color=black,setsar=1",
+                s.width, s.height
+            )
+        })
+    }
+}
+
+#[derive(Clone)]
+struct FormatCuda {
+    format: PixelFormat,
+}
+
+impl HwVideoFilter for FormatCuda {
+    fn apply_to(&self, state: &mut FrameState) {
+        state.pixel_format = self.format.clone();
+    }
+
+    fn required_surface(&self) -> FrameSurface {
+        FrameSurface::Cuda
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        Some(format!("scale_cuda=format={}", self.format.as_arg()))
     }
 }

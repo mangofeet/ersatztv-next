@@ -156,30 +156,21 @@ impl FilterChain {
                 *pixel_format
             );
 
-            match current_state.surface {
-                FrameSurface::Cuda => {
-                    let format = VideoFilter::FormatCuda {
-                        format: pixel_format.to_owned(),
-                    };
-                    format.apply_to(&mut current_state);
-                    resolved.push(PipelineFilter::Video(format));
-                }
-                FrameSurface::Qsv => {
-                    // TODO: QSV format
-                }
-                FrameSurface::Vaapi => {
-                    // TODO: VAAPI format
-                }
-                FrameSurface::VideoToolbox => {
-                    // TODO: VideoToolbox format
-                }
-                FrameSurface::System => {
+            match (&current_state.surface, accel) {
+                (FrameSurface::System, _) => {
                     let format = VideoFilter::Format {
                         format: pixel_format.to_owned(),
                     };
                     format.apply_to(&mut current_state);
                     resolved.push(PipelineFilter::Video(format))
                 }
+                (_, Some(a)) => {
+                    if let Some(f) = a.format_filter(pixel_format) {
+                        f.apply_to(&mut current_state);
+                        resolved.push(PipelineFilter::Video(f));
+                    }
+                }
+                _ => {}
             }
         }
 

@@ -1,3 +1,5 @@
+use dyn_clone::DynClone;
+
 use crate::frame_size::FrameSize;
 use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
 
@@ -8,7 +10,7 @@ pub enum ForceOriginalAspectRatio {
 }
 
 impl ForceOriginalAspectRatio {
-    fn as_arg(&self) -> String {
+    pub(crate) fn as_arg(&self) -> String {
         match self {
             ForceOriginalAspectRatio::Increase => {
                 String::from(":force_original_aspect_ratio=increase")
@@ -19,6 +21,14 @@ impl ForceOriginalAspectRatio {
         }
     }
 }
+
+pub trait HwVideoFilter: DynClone {
+    fn apply_to(&self, state: &mut FrameState);
+    fn required_surface(&self) -> FrameSurface;
+    fn as_arg(&self) -> Option<String>;
+}
+
+dyn_clone::clone_trait_object!(HwVideoFilter);
 
 #[derive(Clone)]
 pub enum VideoFilter {
@@ -42,30 +52,9 @@ pub enum VideoFilter {
     Format {
         format: PixelFormat,
     },
-    ScaleCuda {
-        size: Option<FrameSize>,
-        input_is_anamorphic: bool,
-        force_original_aspect_ratio: Option<ForceOriginalAspectRatio>,
-    },
-    FormatCuda {
-        format: PixelFormat,
-    },
-    PadCuda {
-        size: Option<FrameSize>,
-    },
+    Hardware(Box<dyn HwVideoFilter>),
     CudaHwUploadFallback {
         target_pixel_format: Option<PixelFormat>,
-    },
-    ScaleQsv {
-        size: Option<FrameSize>,
-    },
-    ScaleVaapi {
-        size: Option<FrameSize>,
-        input_is_anamorphic: bool,
-        force_original_aspect_ratio: Option<ForceOriginalAspectRatio>,
-    },
-    PadVaapi {
-        size: Option<FrameSize>,
     },
 }
 
@@ -76,13 +65,9 @@ impl VideoFilter {
             // hardware filters aren't present at the point where this is called
             VideoFilter::HwUpload { .. } => None,
             VideoFilter::HwDownload { .. } => None,
-            VideoFilter::ScaleCuda { .. } => None,
-            VideoFilter::FormatCuda { .. } => None,
-            VideoFilter::PadCuda { .. } => None,
-            VideoFilter::ScaleQsv { .. } => None,
-            VideoFilter::ScaleVaapi { .. } => None,
-            VideoFilter::PadVaapi { .. } => None,
             VideoFilter::Format { .. } => None,
+
+            VideoFilter::Hardware(_) => None,
 
             VideoFilter::CudaHwUploadFallback { .. } => {
                 if state.surface == FrameSurface::Cuda {
@@ -137,6 +122,9 @@ impl VideoFilter {
                 state.surface = FrameSurface::System;
                 state.pixel_format = target_pixel_format.clone();
             }
+            VideoFilter::Hardware(hardware_filter) => {
+                hardware_filter.apply_to(state);
+            }
             VideoFilter::Scale {
                 size: Some(size), ..
             } => {
@@ -155,24 +143,6 @@ impl VideoFilter {
             VideoFilter::Format { format } => {
                 state.pixel_format = format.clone();
             }
-            VideoFilter::ScaleCuda {
-                size: Some(size), ..
-            } => {
-                state.size = size.clone();
-                state.surface = FrameSurface::Cuda;
-                state.is_anamorphic = false;
-                state.sample_aspect_ratio = Some(String::from("1:1"));
-                state.display_aspect_ratio = None;
-            }
-            VideoFilter::ScaleCuda { size: None, .. } => {}
-            VideoFilter::FormatCuda { format } => {
-                state.pixel_format = format.clone();
-            }
-            VideoFilter::PadCuda { size: Some(size) } => {
-                state.size = size.clone();
-                state.surface = FrameSurface::Cuda;
-            }
-            VideoFilter::PadCuda { size: None } => {}
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: Some(format),
             } => {
@@ -181,27 +151,6 @@ impl VideoFilter {
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: None,
             } => {}
-            VideoFilter::ScaleQsv { size: Some(size) } => {
-                state.size = size.clone();
-                state.surface = FrameSurface::Qsv;
-                // TODO: anamorphic handling
-            }
-            VideoFilter::ScaleQsv { size: None } => {}
-            VideoFilter::ScaleVaapi {
-                size: Some(size), ..
-            } => {
-                state.size = size.clone();
-                state.surface = FrameSurface::Vaapi;
-                state.is_anamorphic = false;
-                state.sample_aspect_ratio = Some(String::from("1:1"));
-                state.display_aspect_ratio = None;
-            }
-            VideoFilter::ScaleVaapi { size: None, .. } => {}
-            VideoFilter::PadVaapi { size: Some(size) } => {
-                state.size = size.clone();
-                state.surface = FrameSurface::Vaapi;
-            }
-            VideoFilter::PadVaapi { size: None } => {}
         }
     }
 
@@ -209,20 +158,14 @@ impl VideoFilter {
         match self {
             VideoFilter::HwUpload { .. } => None,
             VideoFilter::HwDownload { .. } => None,
+            VideoFilter::Hardware(hardware_filter) => Some(hardware_filter.required_surface()),
+
             VideoFilter::Scale { .. } => Some(FrameSurface::System),
             VideoFilter::Pad { .. } => Some(FrameSurface::System),
             VideoFilter::Loop { .. } => Some(FrameSurface::System),
             VideoFilter::Format { .. } => Some(FrameSurface::System),
 
-            VideoFilter::ScaleCuda { .. } => Some(FrameSurface::Cuda),
-            VideoFilter::FormatCuda { .. } => Some(FrameSurface::Cuda),
-            VideoFilter::PadCuda { .. } => Some(FrameSurface::Cuda),
             VideoFilter::CudaHwUploadFallback { .. } => None,
-
-            VideoFilter::ScaleQsv { .. } => Some(FrameSurface::Qsv),
-
-            VideoFilter::ScaleVaapi { .. } => Some(FrameSurface::Vaapi),
-            VideoFilter::PadVaapi { .. } => Some(FrameSurface::Vaapi),
         }
     }
 
@@ -240,6 +183,7 @@ impl VideoFilter {
                 "hwdownload,format={}",
                 target_pixel_format.as_arg()
             )),
+            VideoFilter::Hardware(hardware_filter) => hardware_filter.as_arg(),
             VideoFilter::Scale {
                 size: Some(size),
                 input_is_anamorphic,
@@ -269,74 +213,12 @@ impl VideoFilter {
             VideoFilter::Pad { .. } => None,
             VideoFilter::Loop { .. } => Some(String::from("loop=-1:1")),
             VideoFilter::Format { format } => Some(format!("format={}", format.as_arg())),
-            VideoFilter::ScaleCuda {
-                size: Some(size),
-                input_is_anamorphic,
-                force_original_aspect_ratio,
-            } => {
-                let aspect_ratio = force_original_aspect_ratio
-                    .as_ref()
-                    .map_or(String::new(), |f| f.as_arg());
-
-                if *input_is_anamorphic {
-                    Some(format!(
-                        "scale_cuda=iw*sar:ih,setsar=1,scale_cuda={}:{}{}",
-                        size.width, size.height, aspect_ratio
-                    ))
-                } else {
-                    Some(format!(
-                        "scale_cuda={}:{}{},setsar=1",
-                        size.width, size.height, aspect_ratio
-                    ))
-                }
-            }
-            VideoFilter::ScaleCuda { .. } => None,
-            VideoFilter::FormatCuda { format } => {
-                Some(format!("scale_cuda=format={}", format.as_arg()))
-            }
-            VideoFilter::PadCuda { size: Some(size) } => Some(format!(
-                "pad_cuda={}:{}:-1:-1:color=black,setsar=1",
-                size.width, size.height
-            )),
-            VideoFilter::PadCuda { size: None } => None,
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: Some(_format),
             } => Some(String::from("hwupload")),
             VideoFilter::CudaHwUploadFallback {
                 target_pixel_format: None,
             } => None,
-            VideoFilter::ScaleQsv { size: Some(size) } => {
-                // TODO: anamorphic handling
-                Some(format!("vpp_qsv=w={}:h={}", size.width, size.height))
-            }
-            VideoFilter::ScaleQsv { size: None } => None,
-            VideoFilter::ScaleVaapi {
-                size: Some(size),
-                input_is_anamorphic,
-                force_original_aspect_ratio,
-            } => {
-                let aspect_ratio = force_original_aspect_ratio
-                    .as_ref()
-                    .map_or(String::new(), |f| f.as_arg());
-
-                if *input_is_anamorphic {
-                    Some(format!(
-                        "scale_vaapi=iw*sar:ih,setsar=1,scale_vaapi={}:{}{}:force_divisible_by=2",
-                        size.width, size.height, aspect_ratio
-                    ))
-                } else {
-                    Some(format!(
-                        "scale_vaapi={}:{}{}:force_divisible_by=2,setsar=1",
-                        size.width, size.height, aspect_ratio
-                    ))
-                }
-            }
-            VideoFilter::ScaleVaapi { size: None, .. } => None,
-            VideoFilter::PadVaapi { size: Some(size) } => Some(format!(
-                "pad_vaapi={}:{}:-1:-1:color=black",
-                size.width, size.height
-            )),
-            VideoFilter::PadVaapi { size: None } => None,
         }
     }
 }

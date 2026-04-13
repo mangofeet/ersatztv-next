@@ -1,8 +1,9 @@
 use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
+use crate::frame_size::FrameSize;
 use crate::hw_accel::HwAccel;
-use crate::pipeline::{FrameSurface, PixelFormat, VideoFormat};
+use crate::pipeline::{FrameState, FrameSurface, PixelFormat, VideoFormat};
 use crate::video_codec::VideoCodec;
-use crate::video_filter::VideoFilter;
+use crate::video_filter::{HwVideoFilter, VideoFilter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Qsv;
@@ -13,11 +14,11 @@ impl HwAccel for Qsv {
             VideoFilter::Scale { size, .. }
                 if ffmpeg_info.has_video_filter(&KnownVideoFilter::VppQsv) =>
             {
-                VideoFilter::ScaleQsv {
+                VideoFilter::Hardware(Box::new(ScaleQsv {
                     size: size.clone(),
                     //input_is_anamorphic: *input_is_anamorphic,
                     //force_original_aspect_ratio: force_original_aspect_ratio.clone(),
-                }
+                }))
             }
             _ => video_filter.clone(),
         }
@@ -63,6 +64,10 @@ impl HwAccel for Qsv {
         "qsv"
     }
 
+    fn format_filter(&self, _pixel_format: &PixelFormat) -> Option<VideoFilter> {
+        None
+    }
+
     fn frame_surface(&self) -> FrameSurface {
         FrameSurface::Qsv
     }
@@ -81,5 +86,30 @@ impl HwAccel for Qsv {
             10 => PixelFormat::P010le,
             _ => PixelFormat::Nv12,
         }
+    }
+}
+
+#[derive(Clone)]
+struct ScaleQsv {
+    size: Option<FrameSize>,
+}
+
+impl HwVideoFilter for ScaleQsv {
+    fn apply_to(&self, state: &mut FrameState) {
+        if let Some(size) = &self.size {
+            state.size = size.clone();
+            state.surface = FrameSurface::Qsv;
+            // TODO: anamorphic handling
+        }
+    }
+
+    fn required_surface(&self) -> FrameSurface {
+        FrameSurface::Qsv
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        self.size.as_ref().map(|s|
+            // TODO: anamorphic handling
+            format!("vpp_qsv=w={}:h={}", s.width, s.height))
     }
 }

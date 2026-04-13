@@ -1,8 +1,9 @@
 use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
+use crate::frame_size::FrameSize;
 use crate::hw_accel::HwAccel;
-use crate::pipeline::{FrameSurface, PixelFormat, VideoFormat};
+use crate::pipeline::{FrameState, FrameSurface, PixelFormat, VideoFormat};
 use crate::video_codec::VideoCodec;
-use crate::video_filter::VideoFilter;
+use crate::video_filter::{ForceOriginalAspectRatio, HwVideoFilter, VideoFilter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vaapi {
@@ -17,16 +18,16 @@ impl HwAccel for Vaapi {
                 input_is_anamorphic,
                 force_original_aspect_ratio,
             } if ffmpeg_info.has_video_filter(&KnownVideoFilter::ScaleVaapi) => {
-                VideoFilter::ScaleVaapi {
+                VideoFilter::Hardware(Box::new(ScaleVaapi {
                     size: size.clone(),
                     input_is_anamorphic: *input_is_anamorphic,
                     force_original_aspect_ratio: force_original_aspect_ratio.clone(),
-                }
+                }))
             }
             VideoFilter::Pad { size }
                 if ffmpeg_info.has_video_filter(&KnownVideoFilter::PadVaapi) =>
             {
-                VideoFilter::PadVaapi { size: size.clone() }
+                VideoFilter::Hardware(Box::new(PadVaapi { size: size.clone() }))
             }
             _ => video_filter.clone(),
         }
@@ -74,6 +75,10 @@ impl HwAccel for Vaapi {
         "vaapi"
     }
 
+    fn format_filter(&self, _pixel_format: &PixelFormat) -> Option<VideoFilter> {
+        None
+    }
+
     fn frame_surface(&self) -> FrameSurface {
         FrameSurface::Vaapi
     }
@@ -87,5 +92,75 @@ impl HwAccel for Vaapi {
             10 => PixelFormat::P010le,
             _ => PixelFormat::Nv12,
         }
+    }
+}
+
+#[derive(Clone)]
+struct ScaleVaapi {
+    size: Option<FrameSize>,
+    input_is_anamorphic: bool,
+    force_original_aspect_ratio: Option<ForceOriginalAspectRatio>,
+}
+
+impl HwVideoFilter for ScaleVaapi {
+    fn apply_to(&self, state: &mut FrameState) {
+        if let Some(size) = &self.size {
+            state.size = size.clone();
+            state.surface = FrameSurface::Vaapi;
+            state.is_anamorphic = false;
+            state.sample_aspect_ratio = Some(String::from("1:1"));
+            state.display_aspect_ratio = None;
+        }
+    }
+
+    fn required_surface(&self) -> FrameSurface {
+        FrameSurface::Vaapi
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        if let Some(size) = &self.size {
+            let aspect_ratio = self
+                .force_original_aspect_ratio
+                .as_ref()
+                .map_or(String::new(), |f| f.as_arg());
+
+            if self.input_is_anamorphic {
+                Some(format!(
+                    "scale_vaapi=iw*sar:ih,setsar=1,scale_vaapi={}:{}{}:force_divisible_by=2",
+                    size.width, size.height, aspect_ratio
+                ))
+            } else {
+                Some(format!(
+                    "scale_vaapi={}:{}{}:force_divisible_by=2,setsar=1",
+                    size.width, size.height, aspect_ratio
+                ))
+            }
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone)]
+struct PadVaapi {
+    size: Option<FrameSize>,
+}
+
+impl HwVideoFilter for PadVaapi {
+    fn apply_to(&self, state: &mut FrameState) {
+        if let Some(size) = &self.size {
+            state.size = size.clone();
+            state.surface = FrameSurface::Vaapi;
+        }
+    }
+
+    fn required_surface(&self) -> FrameSurface {
+        FrameSurface::Vaapi
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        self.size
+            .as_ref()
+            .map(|s| format!("pad_vaapi={}:{}:-1:-1:color=black", s.width, s.height))
     }
 }

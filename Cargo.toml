@@ -11,7 +11,8 @@ resolver = "3"
 
 [workspace.dependencies]
 axum = "0.8"
-clap = {  version = "4.6", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
+dyn-clone = { version = "1.0" }
 env_logger = "0.11"
 ersatztv-core = { path = "crates/ersatztv-core" }
 ersatztv-playout = { path = "crates/ersatztv-playout" }

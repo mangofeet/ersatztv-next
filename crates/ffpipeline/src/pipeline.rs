@@ -101,7 +101,7 @@ impl PixelFormat {
 }
 
 #[derive(Clone)]
-pub(crate) struct FrameState {
+pub struct FrameState {
     pub(crate) size: FrameSize,
     pub(crate) is_anamorphic: bool,
     pub(crate) sample_aspect_ratio: Option<String>,

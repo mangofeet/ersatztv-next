@@ -98,16 +98,22 @@ impl HardwareAccel {
     pub(crate) fn to_pipeline(
         &self,
         channel_config: &ChannelConfig,
-    ) -> Option<ffpipeline::pipeline::HardwareAccel> {
+    ) -> Option<ffpipeline::hw_accel::HardwareAccel> {
         match self {
-            HardwareAccel::Cuda => Some(ffpipeline::pipeline::HardwareAccel::Cuda),
-            HardwareAccel::Qsv => Some(ffpipeline::pipeline::HardwareAccel::Qsv),
+            HardwareAccel::Cuda => Some(ffpipeline::hw_accel::HardwareAccel::Cuda(
+                ffpipeline::accel::cuda::Cuda,
+            )),
+            HardwareAccel::Qsv => Some(ffpipeline::hw_accel::HardwareAccel::Qsv(
+                ffpipeline::accel::qsv::Qsv,
+            )),
             HardwareAccel::Vaapi => {
                 if let Some(vaapi_device) = &channel_config.normalization.video.vaapi_device {
                     if vaapi_device.exists() {
-                        Some(ffpipeline::pipeline::HardwareAccel::Vaapi {
-                            device: vaapi_device.to_str()?.to_owned(),
-                        })
+                        Some(ffpipeline::hw_accel::HardwareAccel::Vaapi(
+                            ffpipeline::accel::vaapi::Vaapi {
+                                device: vaapi_device.to_str()?.to_owned(),
+                            },
+                        ))
                     } else {
                         log::error!(
                             "`vaapi_device` does not exist! channel will not use hardware accel"
@@ -119,7 +125,9 @@ impl HardwareAccel {
                     None
                 }
             }
-            HardwareAccel::VideoToolbox => Some(ffpipeline::pipeline::HardwareAccel::VideoToolbox),
+            HardwareAccel::VideoToolbox => Some(ffpipeline::hw_accel::HardwareAccel::VideoToolbox(
+                ffpipeline::accel::video_toolbox::VideoToolbox,
+            )),
         }
     }
 }

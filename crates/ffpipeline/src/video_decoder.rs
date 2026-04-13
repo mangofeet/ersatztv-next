@@ -1,5 +1,6 @@
+use crate::hw_accel::{HardwareAccel, HwAccel};
 use crate::output_settings::OutputSettings;
-use crate::pipeline::{FrameSurface, HardwareAccel, PixelFormat};
+use crate::pipeline::{FrameSurface, PixelFormat};
 use crate::probe::ProbeResultVideoStream;
 
 pub enum VideoDecoder {
@@ -44,12 +45,7 @@ impl VideoDecoder {
         match self {
             VideoDecoder::None => FrameSurface::System,
             VideoDecoder::Software => FrameSurface::System,
-            VideoDecoder::HardwareAccel { accel } => match accel {
-                HardwareAccel::Cuda => FrameSurface::Cuda,
-                HardwareAccel::Qsv => FrameSurface::Qsv,
-                HardwareAccel::Vaapi { .. } => FrameSurface::Vaapi,
-                HardwareAccel::VideoToolbox => FrameSurface::VideoToolbox,
-            },
+            VideoDecoder::HardwareAccel { accel } => accel.frame_surface(),
         }
     }
 
@@ -57,24 +53,7 @@ impl VideoDecoder {
         match self {
             VideoDecoder::None => source_pixel_format.clone(),
             VideoDecoder::Software => source_pixel_format.clone(),
-            VideoDecoder::HardwareAccel { accel } => match accel {
-                HardwareAccel::Cuda => match source_pixel_format.bit_depth() {
-                    10 => PixelFormat::P010le,
-                    _ => PixelFormat::Nv12,
-                },
-                HardwareAccel::Qsv => match source_pixel_format.bit_depth() {
-                    10 => PixelFormat::P010le,
-                    _ => PixelFormat::Nv12,
-                },
-                HardwareAccel::Vaapi { .. } => match source_pixel_format.bit_depth() {
-                    10 => PixelFormat::P010le,
-                    _ => PixelFormat::Nv12,
-                },
-                HardwareAccel::VideoToolbox => match source_pixel_format.bit_depth() {
-                    10 => PixelFormat::P010le,
-                    _ => PixelFormat::Nv12,
-                },
-            },
+            VideoDecoder::HardwareAccel { accel } => accel.output_format(source_pixel_format),
         }
     }
 
@@ -82,57 +61,11 @@ impl VideoDecoder {
         match self {
             VideoDecoder::None => Vec::new(),
             VideoDecoder::Software => Vec::new(),
-            VideoDecoder::HardwareAccel { accel } => match accel {
-                HardwareAccel::Cuda => {
-                    vec![
-                        String::from("-hwaccel"),
-                        String::from("cuda"),
-                        String::from("-hwaccel_output_format"),
-                        String::from("cuda"),
-                    ]
-                }
-                HardwareAccel::Qsv => {
-                    vec![
-                        String::from("-hwaccel"),
-                        String::from("qsv"),
-                        String::from("-hwaccel_output_format"),
-                        String::from("qsv"),
-                    ]
-                }
-                HardwareAccel::Vaapi { device } => {
-                    vec![
-                        String::from("-hwaccel"),
-                        String::from("vaapi"),
-                        String::from("-vaapi_device"),
-                        device.clone(),
-                        String::from("-hwaccel_output_format"),
-                        String::from("vaapi"),
-                    ]
-                }
-                HardwareAccel::VideoToolbox => {
-                    vec![
-                        String::from("-hwaccel"),
-                        String::from("videotoolbox"),
-                        String::from("-hwaccel_output_format"),
-                        String::from("videotoolbox_vld"),
-                    ]
-                }
-            },
+            VideoDecoder::HardwareAccel { accel } => accel.decoder_arg(),
         }
     }
 
     fn can_hw_decode(accel: &HardwareAccel, codec: &str, pix_fmt: &str) -> bool {
-        let pixel_format = PixelFormat::parse(pix_fmt);
-        match (accel, pixel_format.bit_depth()) {
-            (HardwareAccel::Cuda, 10) => matches!(codec, "av1" | "hevc"),
-            (HardwareAccel::Cuda, 8) => matches!(codec, "av1" | "h264" | "hevc" | "mpeg2video"),
-            (HardwareAccel::Qsv, 10) => matches!(codec, "hevc"),
-            (HardwareAccel::Qsv, 8) => matches!(codec, "h264" | "hevc"),
-            (HardwareAccel::Vaapi { .. }, 10) => matches!(codec, "hevc"),
-            (HardwareAccel::Vaapi { .. }, 8) => matches!(codec, "h264" | "hevc"),
-            (HardwareAccel::VideoToolbox, 10) => matches!(codec, "hevc"),
-            (HardwareAccel::VideoToolbox, 8) => matches!(codec, "h264" | "hevc"),
-            _ => false,
-        }
+        accel.can_decode(codec, &PixelFormat::parse(pix_fmt))
     }
 }

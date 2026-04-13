@@ -1,6 +1,7 @@
 use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
 use crate::frame_size::FrameSize;
-use crate::pipeline::{FrameState, FrameSurface, HardwareAccel, PixelFormat};
+use crate::hw_accel::HardwareAccel;
+use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
 
 #[derive(Clone)]
 pub enum ForceOriginalAspectRatio {
@@ -218,13 +219,13 @@ impl VideoFilter {
                     input_is_anamorphic,
                     force_original_aspect_ratio,
                 },
-                Some(HardwareAccel::Cuda),
+                Some(HardwareAccel::Cuda(crate::accel::cuda::Cuda)),
             ) => VideoFilter::ScaleCuda {
                 size: size.clone(),
                 input_is_anamorphic: *input_is_anamorphic,
                 force_original_aspect_ratio: force_original_aspect_ratio.clone(),
             },
-            (VideoFilter::Scale { size, .. }, Some(HardwareAccel::Qsv)) => {
+            (VideoFilter::Scale { size, .. }, Some(HardwareAccel::Qsv(_))) => {
                 if ffmpeg_info.has_video_filter(&KnownVideoFilter::VppQsv) {
                     VideoFilter::ScaleQsv {
                         size: size.clone(),
@@ -253,7 +254,7 @@ impl VideoFilter {
                     self.clone()
                 }
             }
-            (VideoFilter::Pad { size }, Some(HardwareAccel::Cuda)) => {
+            (VideoFilter::Pad { size }, Some(HardwareAccel::Cuda(_))) => {
                 if ffmpeg_info.has_video_filter(&KnownVideoFilter::PadCuda) {
                     VideoFilter::PadCuda { size: size.clone() }
                 } else {

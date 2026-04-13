@@ -30,18 +30,15 @@ impl OutputFormat {
             OutputFormat::Hls {
                 segment_template, ..
             } => {
-                match output_context.video_codec {
-                    VideoCodec::Copy => {}
-                    _ => {
-                        args.extend(vec![
-                            "-g",
-                            &gop,
-                            "-keyint_min",
-                            &keyint_min,
-                            "-force_key_frames",
-                            &force_key_frames_expr,
-                        ]);
-                    }
+                if output_context.video_codec != VideoCodec::COPY {
+                    args.extend(vec![
+                        "-g",
+                        &gop,
+                        "-keyint_min",
+                        &keyint_min,
+                        "-force_key_frames",
+                        &force_key_frames_expr,
+                    ]);
                 }
 
                 args.extend(vec![

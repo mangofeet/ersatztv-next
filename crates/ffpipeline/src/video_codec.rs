@@ -1,59 +1,41 @@
 use crate::pipeline::PixelFormat;
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum VideoCodec {
-    Copy,
-    H264Nvenc,
-    HevcNvenc,
-    H264Qsv,
-    HevcQsv,
-    H264Vaapi,
-    HevcVaapi,
-    H264VideoToolbox,
-    HevcVideoToolbox,
-    Libx264,
-    Libx265,
+#[derive(Clone, PartialEq)]
+pub struct VideoCodec {
+    pub(crate) codec_name: &'static str,
+    pub(crate) options: &'static [&'static str],
+    pub(crate) preferred_pixel_format_8bit: Option<PixelFormat>,
+    pub(crate) preferred_pixel_format_10bit: Option<PixelFormat>,
+    pub(crate) is_hardware: bool,
 }
 
 impl VideoCodec {
-    pub(crate) fn preferred_pixel_format(&self, bit_depth: u32) -> Option<PixelFormat> {
-        match self {
-            VideoCodec::H264Nvenc => Some(PixelFormat::Nv12),
-            VideoCodec::HevcNvenc => match bit_depth {
-                10 => Some(PixelFormat::P010le),
-                _ => Some(PixelFormat::Nv12),
-            },
-            VideoCodec::H264Qsv => Some(PixelFormat::Nv12),
-            VideoCodec::HevcQsv => match bit_depth {
-                10 => Some(PixelFormat::P010le),
-                _ => Some(PixelFormat::Nv12),
-            },
-            _ => None,
-        }
-    }
+    pub const COPY: VideoCodec = VideoCodec {
+        codec_name: "copy",
+        options: &[],
+        preferred_pixel_format_8bit: None,
+        preferred_pixel_format_10bit: None,
+        is_hardware: false,
+    };
+
+    pub const LIBX264: VideoCodec = VideoCodec {
+        codec_name: "libx264",
+        options: &[],
+        preferred_pixel_format_8bit: None,
+        preferred_pixel_format_10bit: None,
+        is_hardware: false,
+    };
+
+    pub const LIBX265: VideoCodec = VideoCodec {
+        codec_name: "libx265",
+        options: &["-tag:v", "hvc1", "-x265-params", "log-level=error"],
+        preferred_pixel_format_8bit: None,
+        preferred_pixel_format_10bit: None,
+        is_hardware: false,
+    };
 
     pub(crate) fn as_arg(&self) -> Vec<String> {
-        let codec: &str = match self {
-            VideoCodec::Copy => "copy",
-            VideoCodec::H264Nvenc => "h264_nvenc",
-            VideoCodec::HevcNvenc => "hevc_nvenc",
-            VideoCodec::H264Qsv => "h264_qsv",
-            VideoCodec::HevcQsv => "hevc_qsv",
-            VideoCodec::H264Vaapi => "h264_vaapi",
-            VideoCodec::HevcVaapi => "hevc_vaapi",
-            VideoCodec::H264VideoToolbox => "h264_videotoolbox",
-            VideoCodec::HevcVideoToolbox => "hevc_videotoolbox",
-            VideoCodec::Libx264 => "libx264",
-            VideoCodec::Libx265 => "libx265",
-        };
-
-        let options = match self {
-            VideoCodec::Libx265 => vec!["-tag:v", "hvc1", "-x265-params", "log-level=error"],
-            VideoCodec::HevcQsv => vec!["-low_power", "0", "-look_ahead", "0"],
-            _ => Vec::new(),
-        };
-
-        [&["-vcodec", codec], &options[..]]
+        [&["-vcodec", self.codec_name], self.options]
             .concat()
             .into_iter()
             .map(String::from)

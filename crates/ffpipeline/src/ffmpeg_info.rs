@@ -3,7 +3,7 @@ use std::path::Path;
 use tokio::process::Command;
 
 use crate::error::FFPipelineError;
-use crate::pipeline::HardwareAccel;
+use crate::hw_accel::{HardwareAccel, HwAccel};
 
 static KNOWN_ACCELS: &[&str] = &["cuda", "qsv", "vaapi", "videotoolbox"];
 static KNOWN_FILTERS: &[&str] = &["pad_cuda", "pad_vaapi", "scale_vaapi", "vpp_qsv"];
@@ -35,12 +35,7 @@ impl FfmpegInfo {
     }
 
     pub fn has_hw_accel(&self, accel: &HardwareAccel) -> bool {
-        if let Some(accel_string) = match accel {
-            HardwareAccel::Cuda => Some("cuda"),
-            HardwareAccel::Qsv => Some("qsv"),
-            HardwareAccel::Vaapi { .. } => Some("vaapi"),
-            HardwareAccel::VideoToolbox => Some("videotoolbox"),
-        } {
+        if let Some(accel_string) = Some(accel.ffmpeg_name()) {
             self.hwaccels.iter().any(|f| f == accel_string)
         } else {
             false

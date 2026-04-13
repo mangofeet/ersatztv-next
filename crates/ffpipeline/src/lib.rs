@@ -1,3 +1,4 @@
+pub mod accel;
 pub mod audio_codec;
 pub mod audio_decoder;
 pub mod audio_filter;
@@ -7,6 +8,7 @@ pub mod filter_chain;
 pub mod frame_rate;
 pub mod frame_size;
 pub mod global_option;
+pub mod hw_accel;
 pub mod input;
 pub mod output_format;
 pub mod output_option;

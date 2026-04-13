@@ -1,4 +1,4 @@
-use crate::pipeline::HardwareAccel;
+use crate::hw_accel::{HardwareAccel, HwAccel};
 
 pub enum LogLevel {
     Error,
@@ -32,20 +32,7 @@ impl GlobalOption {
                 String::from("-fflags"),
                 String::from("+genpts+discardcorrupt+igndts"),
             ],
-            GlobalOption::InitHwDevice(accel) => match accel {
-                HardwareAccel::Cuda => {
-                    vec![String::from("-init_hw_device"), String::from("cuda")]
-                }
-                HardwareAccel::Qsv => {
-                    vec![
-                        String::from("-init_hw_device"),
-                        String::from("qsv=hw"),
-                        String::from("-filter_hw_device"),
-                        String::from("hw"),
-                    ]
-                }
-                _ => Vec::new(),
-            },
+            GlobalOption::InitHwDevice(accel) => accel.init_hw_device(),
         }
     }
 }

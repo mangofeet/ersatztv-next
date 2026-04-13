@@ -1,6 +1,7 @@
 use crate::audio_filter::AudioFilter;
 use crate::ffmpeg_info::FfmpegInfo;
-use crate::pipeline::{FrameState, FrameSurface, HardwareAccel, PixelFormat};
+use crate::hw_accel::HardwareAccel;
+use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
 use crate::video_filter::VideoFilter;
 
 #[derive(Clone)]

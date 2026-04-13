@@ -10,6 +10,7 @@ use crate::filter_chain::{FilterChain, PipelineFilter};
 use crate::frame_rate::FrameRate;
 use crate::frame_size::FrameSize;
 use crate::global_option::{GlobalOption, LogLevel};
+use crate::hw_accel::{HardwareAccel, HwAccel};
 use crate::input::{InputSettings, InputSource};
 use crate::output_option::OutputOption;
 use crate::output_settings::OutputSettings;
@@ -34,14 +35,6 @@ pub struct Kbps(pub u32);
 pub enum VideoFormat {
     H264,
     Hevc,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum HardwareAccel {
-    Cuda,
-    Qsv,
-    Vaapi { device: String },
-    VideoToolbox,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -185,24 +178,13 @@ impl Pipeline {
         };
 
         let video_codec = match (
-            &final_output_settings.accel,
+            final_output_settings.accel.as_ref(),
             final_output_settings.video_format,
         ) {
-            (Some(HardwareAccel::Cuda), Some(VideoFormat::H264)) => VideoCodec::H264Nvenc,
-            (Some(HardwareAccel::Cuda), Some(VideoFormat::Hevc)) => VideoCodec::HevcNvenc,
-            (Some(HardwareAccel::Qsv), Some(VideoFormat::H264)) => VideoCodec::H264Qsv,
-            (Some(HardwareAccel::Qsv), Some(VideoFormat::Hevc)) => VideoCodec::HevcQsv,
-            (Some(HardwareAccel::Vaapi { .. }), Some(VideoFormat::H264)) => VideoCodec::H264Vaapi,
-            (Some(HardwareAccel::Vaapi { .. }), Some(VideoFormat::Hevc)) => VideoCodec::HevcVaapi,
-            (Some(HardwareAccel::VideoToolbox), Some(VideoFormat::H264)) => {
-                VideoCodec::H264VideoToolbox
-            }
-            (Some(HardwareAccel::VideoToolbox), Some(VideoFormat::Hevc)) => {
-                VideoCodec::HevcVideoToolbox
-            }
-            (None, Some(VideoFormat::H264)) => VideoCodec::Libx264,
-            (None, Some(VideoFormat::Hevc)) => VideoCodec::Libx265,
-            _ => VideoCodec::Copy,
+            (Some(a), Some(format)) => a.codec_for_format(&format),
+            (None, Some(VideoFormat::H264)) => VideoCodec::LIBX264,
+            (None, Some(VideoFormat::Hevc)) => VideoCodec::LIBX265,
+            _ => VideoCodec::COPY,
         };
 
         let output_path = final_output_settings.format.path();
@@ -231,21 +213,23 @@ impl Pipeline {
             .as_ref()
             .map(|s| s.square_pixel_size(&initial_state));
 
+        let preferred_pixel_format = match initial_state.pixel_format.bit_depth() {
+            10 => video_codec.preferred_pixel_format_10bit.clone(),
+            8 => video_codec.preferred_pixel_format_8bit.clone(),
+            _ => None,
+        };
+
         let output_context = OutputContext {
             audio_codec,
             audio_channels: final_output_settings.audio_channels,
-            video_codec,
+            video_codec: video_codec.clone(),
             pts_offset: final_output_settings.pts_offset,
             media_frame_rate: video_stream.frame_rate.to_owned(),
-            preferred_surface: match &final_output_settings.accel {
-                Some(HardwareAccel::Cuda) => FrameSurface::Cuda,
-                Some(HardwareAccel::Qsv) => FrameSurface::Qsv,
-                Some(HardwareAccel::Vaapi { .. }) => FrameSurface::Vaapi,
-                // TODO: proper surfaces for other accels
+            preferred_surface: match final_output_settings.accel.as_ref() {
+                Some(a) => a.frame_surface(),
                 _ => FrameSurface::System,
             },
-            preferred_pixel_format: video_codec
-                .preferred_pixel_format(initial_state.pixel_format.bit_depth()),
+            preferred_pixel_format,
         };
 
         Ok(Pipeline {
@@ -347,7 +331,7 @@ impl Pipeline {
         }
 
         // video copy shouldn't have bitrate, etc
-        if self.output_context.video_codec == VideoCodec::Copy {
+        if self.output_context.video_codec == VideoCodec::COPY {
             self.output_options.retain(|o| {
                 !matches!(
                     o,
@@ -364,7 +348,7 @@ impl Pipeline {
             .iter()
             .find_map(|s| match s {
                 PipelineInput::Video { decoder, .. } => {
-                    Some(decoder.is_hardware(HardwareAccel::Cuda))
+                    Some(decoder.is_hardware(HardwareAccel::Cuda(crate::accel::cuda::Cuda)))
                 }
                 _ => None,
             })
@@ -604,27 +588,14 @@ impl Pipeline {
     }
 
     fn needs_hw_device(&self) -> Option<HardwareAccel> {
-        let encoder_needs = match self.output_context.video_codec {
-            VideoCodec::H264Nvenc | VideoCodec::HevcNvenc => self.accel.clone(),
-            VideoCodec::H264Qsv | VideoCodec::HevcQsv => self.accel.clone(),
-            VideoCodec::H264Vaapi | VideoCodec::HevcVaapi => self.accel.clone(),
-            _ => None,
-        };
-
-        if encoder_needs.is_some() {
-            return encoder_needs;
+        if self.output_context.video_codec.is_hardware {
+            return self.accel.clone();
         }
 
         for filter in &self.filter_chain.filters {
             if let PipelineFilter::Video(video_filter) = filter {
                 match video_filter.required_surface() {
-                    Some(FrameSurface::Cuda) => {
-                        return self.accel.clone();
-                    }
-                    Some(FrameSurface::Qsv) => {
-                        return self.accel.clone();
-                    }
-                    Some(FrameSurface::Vaapi) => {
+                    Some(surface) if surface != FrameSurface::System => {
                         return self.accel.clone();
                     }
                     _ => {}

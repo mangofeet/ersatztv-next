@@ -111,8 +111,8 @@ struct ProbeOutput {
     format: ProbeOutputFormat,
 }
 
-pub fn probe(path: &str) -> Result<ProbeResult, FFPipelineError> {
-    let output = Command::new("ffprobe")
+pub fn probe(ffprobe_path: &std::path::Path, path: &str) -> Result<ProbeResult, FFPipelineError> {
+    let output = Command::new(ffprobe_path)
         .args([
             "-hide_banner",
             "-print_format",
@@ -133,8 +133,12 @@ pub fn probe(path: &str) -> Result<ProbeResult, FFPipelineError> {
     parse_ffprobe_stdout(path, output.stdout)
 }
 
-pub fn probe_lavfi(lavfi: &str) -> Result<ProbeResult, FFPipelineError> {
-    let mut ffmpeg = Command::new("ffmpeg")
+pub fn probe_lavfi(
+    ffprobe_path: &std::path::Path,
+    ffmpeg_path: &std::path::Path,
+    lavfi: &str,
+) -> Result<ProbeResult, FFPipelineError> {
+    let mut ffmpeg = Command::new(ffmpeg_path)
         .args(["-f", "lavfi", "-i", lavfi, "-t", "1", "-f", "nut", "pipe:1"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -143,7 +147,7 @@ pub fn probe_lavfi(lavfi: &str) -> Result<ProbeResult, FFPipelineError> {
 
     let ffmpeg_stdout = ffmpeg.stdout.take().ok_or(FFPipelineError::ProbeFailed)?;
 
-    let output = Command::new("ffprobe")
+    let output = Command::new(ffprobe_path)
         .args([
             "-hide_banner",
             "-print_format",

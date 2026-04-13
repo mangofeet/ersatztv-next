@@ -155,7 +155,7 @@ pub struct Pipeline {
 
 impl Pipeline {
     fn full(
-        ffmpeg_info: FfmpegInfo,
+        ffmpeg_info: &FfmpegInfo,
         input_settings: InputSettings,
         output_settings: OutputSettings,
     ) -> Result<Pipeline, FFPipelineError> {
@@ -248,7 +248,7 @@ impl Pipeline {
         };
 
         Ok(Pipeline {
-            ffmpeg_info,
+            ffmpeg_info: ffmpeg_info.clone(),
             accel: final_output_settings.accel.clone(),
             initial_state: initial_state.clone(),
             global_options: vec![
@@ -642,7 +642,7 @@ impl std::fmt::Display for Pipeline {
 }
 
 pub fn generate_pipeline(
-    ffmpeg_info: FfmpegInfo,
+    ffmpeg_info: &FfmpegInfo,
     input_settings: InputSettings,
     output_settings: OutputSettings,
 ) -> Result<Pipeline, FFPipelineError> {

@@ -1,10 +1,11 @@
 use std::fmt::Formatter;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use ersatztv_core::{READY_FILE_NAME, empty_folder};
 use ersatztv_playout::playout::{PlayoutItem, PlayoutItemSource, TrackSelection};
+use ffpipeline::ffmpeg_info::FfmpegInfo;
 use ffpipeline::frame_rate::FrameRate;
 use ffpipeline::frame_size::FrameSize;
 use ffpipeline::input::{InputSettings, InputSource, ProbedInput};
@@ -53,6 +54,10 @@ pub struct ChannelSession {
     playout_loader: PlayoutLoader,
     pts_scanner: PtsScanner,
     playlist_manager: Arc<Mutex<PlaylistManager>>,
+
+    ffmpeg_path: PathBuf,
+    ffprobe_path: PathBuf,
+    ffmpeg_info: FfmpegInfo,
 
     transcoded_until: OffsetDateTime,
     ready_file: PathBuf,
@@ -110,11 +115,28 @@ impl ChannelSession {
 
         let playlist_manager = Arc::new(Mutex::new(playlist_manager));
 
+        let default_ffprobe_path = Path::new("ffprobe").to_path_buf();
+        let default_ffmpeg_path = Path::new("ffmpeg").to_path_buf();
+
+        let ffprobe_path = channel_config
+            .ffmpeg
+            .ffprobe_path
+            .clone()
+            .unwrap_or(default_ffprobe_path);
+        let ffmpeg_path = channel_config
+            .ffmpeg
+            .ffmpeg_path
+            .clone()
+            .unwrap_or(default_ffmpeg_path);
+
         Ok(ChannelSession {
             channel_config,
             playout_loader,
             pts_scanner,
             playlist_manager,
+            ffmpeg_path: ffmpeg_path.to_owned(),
+            ffprobe_path: ffprobe_path.to_owned(),
+            ffmpeg_info: FfmpegInfo::default(),
             transcoded_until: now + start_time_offset,
             ready_file,
             output_file: ffmpeg_output_file,
@@ -127,6 +149,12 @@ impl ChannelSession {
 
     pub async fn run(&mut self) -> Result<(), ChannelError> {
         self.prep_output_folder().await?;
+
+        self.ffmpeg_info = FfmpegInfo::load(
+            &self.ffmpeg_path,
+            &self.channel_config.ffmpeg.disabled_filters,
+        )
+        .await?;
 
         let pm = self.playlist_manager.clone();
         let tn = self.timeout_notify.clone();
@@ -291,11 +319,12 @@ impl ChannelSession {
             }
         }?;
 
-        let audio_probe_result = Self::probe_source(&audio_source)?;
+        let audio_probe_result =
+            Self::probe_source(&self.ffprobe_path, &self.ffmpeg_path, &audio_source)?;
         let video_probe_result = if video_source == audio_source {
             audio_probe_result.clone()
         } else {
-            Self::probe_source(&video_source)?
+            Self::probe_source(&self.ffprobe_path, &self.ffmpeg_path, &video_source)?
         };
 
         let audio_norm = &self.channel_config.normalization.audio;
@@ -391,9 +420,8 @@ impl ChannelSession {
             },
         };
 
-        let ffmpeg_info = ffpipeline::ffmpeg_info::FfmpegInfo::load("ffmpeg").await?;
         let mut pipeline_result =
-            pipeline::generate_pipeline(ffmpeg_info, input_settings, output_settings)?;
+            pipeline::generate_pipeline(&self.ffmpeg_info, input_settings, output_settings)?;
         pipeline_result.optimize();
         let args = pipeline_result.args();
         log::debug!("optimized pipeline: {}", args.join(" "));
@@ -405,7 +433,7 @@ impl ChannelSession {
             .await?;
 
         // stream current item
-        let mut ffmpeg_child = tokio::process::Command::new("ffmpeg")
+        let mut ffmpeg_child = tokio::process::Command::new(&self.ffmpeg_path)
             .args(args)
             .stdout(std::process::Stdio::null())
             .spawn()
@@ -469,7 +497,11 @@ impl ChannelSession {
         result
     }
 
-    fn probe_source(source: &PlayoutItemSource) -> Result<ProbeResult, ChannelError> {
+    fn probe_source(
+        ffprobe_path: &Path,
+        ffmpeg_path: &Path,
+        source: &PlayoutItemSource,
+    ) -> Result<ProbeResult, ChannelError> {
         match source {
             PlayoutItemSource::Local { path, .. } => {
                 let expanded_path_buf =
@@ -480,12 +512,12 @@ impl ChannelSession {
                     .ok_or(ChannelError::PlayoutJsonInvalidLocalSource)?;
 
                 // probe current item
-                let probe_result = probe::probe(expanded_path)?;
+                let probe_result = probe::probe(ffprobe_path, expanded_path)?;
 
                 Ok(probe_result)
             }
             PlayoutItemSource::Lavfi { params } => {
-                let probe_result = probe::probe_lavfi(params)?;
+                let probe_result = probe::probe_lavfi(ffprobe_path, ffmpeg_path, params)?;
 
                 Ok(probe_result)
             }

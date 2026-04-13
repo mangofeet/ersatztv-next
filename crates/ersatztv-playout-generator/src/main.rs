@@ -1,7 +1,7 @@
 mod error;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use ersatztv_playout::playout::{
@@ -188,7 +188,7 @@ fn is_image_extension(dir_entry: &DirEntry) -> bool {
 
 fn to_probe_result(dir_entry: DirEntry) -> Option<PathAndProbe> {
     if let Some(video_path) = dir_entry.path().to_str()
-        && let Ok(probe_result) = ffpipeline::probe::probe(video_path)
+        && let Ok(probe_result) = ffpipeline::probe::probe(Path::new("ffprobe"), video_path)
     // && probe_result
     //     .duration
     //     .filter(|d| d.as_secs() < 120)

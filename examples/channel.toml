@@ -7,6 +7,17 @@ folder = "~/Playouts"
 # which can be useful for troubleshooting
 #virtual_start = "2026-04-12T19:04:30-05:00"
 
+[ffmpeg]
+# defaults to "ffmpeg" (must be in PATH)
+#ffmpeg_path = "/usr/local/bin/ffmpeg"
+
+# defaults to "ffprobe" (must be in PATH)
+#ffprobe_path = "/usr/local/bin/ffprobe"
+
+# filters listed here will be skipped when building the pipeline,
+# which van be useful for working around hardware/driver bugs and/or limitations with specific filters
+#disabled_filters = ["pad_vaapi", "pad_cuda"]
+
 [normalization.audio]
 # audio will be stream copied when format is not set (comment out the format line)
 format = "aac"

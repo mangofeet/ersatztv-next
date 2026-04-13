@@ -9,6 +9,7 @@ use crate::error::ChannelError;
 #[derive(Deserialize, Clone)]
 pub struct ChannelConfig {
     pub playout: PlayoutConfig,
+    pub ffmpeg: FfmpegConfig,
     pub normalization: NormalizationConfig,
 
     #[serde(skip)]
@@ -26,6 +27,14 @@ pub struct PlayoutConfig {
     pub folder: String,
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub virtual_start: Option<OffsetDateTime>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct FfmpegConfig {
+    pub ffmpeg_path: Option<PathBuf>,
+    pub ffprobe_path: Option<PathBuf>,
+    #[serde(default)]
+    pub disabled_filters: Vec<String>,
 }
 
 #[derive(Deserialize, Clone)]

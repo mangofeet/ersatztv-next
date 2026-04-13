@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use tokio::process::Command;
 
 use crate::error::FFPipelineError;
@@ -13,16 +15,19 @@ pub enum KnownVideoFilter {
     VppQsv,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub struct FfmpegInfo {
     hwaccels: Vec<String>,
     video_filters: Vec<String>,
 }
 
 impl FfmpegInfo {
-    pub async fn load(path: &str) -> Result<FfmpegInfo, FFPipelineError> {
+    pub async fn load(
+        path: &Path,
+        disabled_filters: &[String],
+    ) -> Result<FfmpegInfo, FFPipelineError> {
         let hwaccels = Self::load_hw_accels(path).await?;
-        let video_filters = Self::load_video_filters(path).await?;
+        let video_filters = Self::load_video_filters(path, disabled_filters).await?;
         Ok(FfmpegInfo {
             hwaccels,
             video_filters,
@@ -55,7 +60,7 @@ impl FfmpegInfo {
         }
     }
 
-    async fn load_hw_accels(path: &str) -> Result<Vec<String>, FFPipelineError> {
+    async fn load_hw_accels(path: &Path) -> Result<Vec<String>, FFPipelineError> {
         let output = Command::new(path)
             .args(["-hide_banner", "-hwaccels"])
             .output()
@@ -81,7 +86,10 @@ impl FfmpegInfo {
         Ok(accels)
     }
 
-    async fn load_video_filters(path: &str) -> Result<Vec<String>, FFPipelineError> {
+    async fn load_video_filters(
+        path: &Path,
+        disabled_filters: &[String],
+    ) -> Result<Vec<String>, FFPipelineError> {
         let output = Command::new(path)
             .args(["-hide_banner", "-filters"])
             .output()
@@ -96,6 +104,7 @@ impl FfmpegInfo {
             //  .. scale_cuda        V->V       GPU accelerated video resizer
             if let Some(filter) = line.split_whitespace().nth(1)
                 && KNOWN_FILTERS.contains(&filter)
+                && !disabled_filters.iter().any(|f| f == filter)
             {
                 filters.push(filter.to_owned());
             }

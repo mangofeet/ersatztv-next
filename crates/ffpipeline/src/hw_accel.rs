@@ -1,8 +1,11 @@
 use crate::accel;
+use crate::ffmpeg_info::FfmpegInfo;
 use crate::pipeline::{FrameSurface, PixelFormat, VideoFormat};
 use crate::video_codec::VideoCodec;
+use crate::video_filter::VideoFilter;
 
 pub trait HwAccel {
+    fn best_filter(&self, video_filter: &VideoFilter, ffmpeg_info: &FfmpegInfo) -> VideoFilter;
     fn can_decode(&self, codec: &str, pixel_format: &PixelFormat) -> bool;
     fn codec_for_format(&self, format: &VideoFormat) -> VideoCodec;
     fn decoder_arg(&self) -> Vec<String>;
@@ -21,6 +24,15 @@ pub enum HardwareAccel {
 }
 
 impl HwAccel for HardwareAccel {
+    fn best_filter(&self, video_filter: &VideoFilter, ffmpeg_info: &FfmpegInfo) -> VideoFilter {
+        match self {
+            Self::Cuda(a) => a.best_filter(video_filter, ffmpeg_info),
+            Self::Qsv(a) => a.best_filter(video_filter, ffmpeg_info),
+            Self::Vaapi(a) => a.best_filter(video_filter, ffmpeg_info),
+            Self::VideoToolbox(a) => a.best_filter(video_filter, ffmpeg_info),
+        }
+    }
+
     fn can_decode(&self, codec: &str, pixel_format: &PixelFormat) -> bool {
         match self {
             Self::Cuda(a) => a.can_decode(codec, pixel_format),

@@ -1,11 +1,35 @@
+use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
 use crate::hw_accel::HwAccel;
 use crate::pipeline::{FrameSurface, PixelFormat, VideoFormat};
 use crate::video_codec::VideoCodec;
+use crate::video_filter::VideoFilter;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cuda;
 
 impl HwAccel for Cuda {
+    fn best_filter(&self, video_filter: &VideoFilter, ffmpeg_info: &FfmpegInfo) -> VideoFilter {
+        match video_filter {
+            VideoFilter::Scale {
+                size,
+                input_is_anamorphic,
+                force_original_aspect_ratio,
+            } if ffmpeg_info.has_video_filter(&KnownVideoFilter::ScaleCuda) => {
+                VideoFilter::ScaleCuda {
+                    size: size.clone(),
+                    input_is_anamorphic: *input_is_anamorphic,
+                    force_original_aspect_ratio: force_original_aspect_ratio.clone(),
+                }
+            }
+            VideoFilter::Pad { size }
+                if ffmpeg_info.has_video_filter(&KnownVideoFilter::PadCuda) =>
+            {
+                VideoFilter::PadCuda { size: size.clone() }
+            }
+            _ => video_filter.clone(),
+        }
+    }
+
     fn can_decode(&self, codec: &str, pixel_format: &PixelFormat) -> bool {
         match pixel_format.bit_depth() {
             10 => matches!(codec, "av1" | "hevc"),

@@ -1,6 +1,4 @@
-use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
 use crate::frame_size::FrameSize;
-use crate::hw_accel::HardwareAccel;
 use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
 
 #[derive(Clone)]
@@ -204,71 +202,6 @@ impl VideoFilter {
                 state.surface = FrameSurface::Vaapi;
             }
             VideoFilter::PadVaapi { size: None } => {}
-        }
-    }
-
-    pub(crate) fn best_for(
-        &self,
-        accel: &Option<HardwareAccel>,
-        ffmpeg_info: &FfmpegInfo,
-    ) -> VideoFilter {
-        match (self, accel) {
-            (
-                VideoFilter::Scale {
-                    size,
-                    input_is_anamorphic,
-                    force_original_aspect_ratio,
-                },
-                Some(HardwareAccel::Cuda(crate::accel::cuda::Cuda)),
-            ) => VideoFilter::ScaleCuda {
-                size: size.clone(),
-                input_is_anamorphic: *input_is_anamorphic,
-                force_original_aspect_ratio: force_original_aspect_ratio.clone(),
-            },
-            (VideoFilter::Scale { size, .. }, Some(HardwareAccel::Qsv(_))) => {
-                if ffmpeg_info.has_video_filter(&KnownVideoFilter::VppQsv) {
-                    VideoFilter::ScaleQsv {
-                        size: size.clone(),
-                        //input_is_anamorphic: *input_is_anamorphic,
-                        //force_original_aspect_ratio: force_original_aspect_ratio.clone(),
-                    }
-                } else {
-                    self.clone()
-                }
-            }
-            (
-                VideoFilter::Scale {
-                    size,
-                    input_is_anamorphic,
-                    force_original_aspect_ratio,
-                },
-                Some(HardwareAccel::Vaapi { .. }),
-            ) => {
-                if ffmpeg_info.has_video_filter(&KnownVideoFilter::ScaleVaapi) {
-                    VideoFilter::ScaleVaapi {
-                        size: size.clone(),
-                        input_is_anamorphic: *input_is_anamorphic,
-                        force_original_aspect_ratio: force_original_aspect_ratio.clone(),
-                    }
-                } else {
-                    self.clone()
-                }
-            }
-            (VideoFilter::Pad { size }, Some(HardwareAccel::Cuda(_))) => {
-                if ffmpeg_info.has_video_filter(&KnownVideoFilter::PadCuda) {
-                    VideoFilter::PadCuda { size: size.clone() }
-                } else {
-                    self.clone()
-                }
-            }
-            (VideoFilter::Pad { size }, Some(HardwareAccel::Vaapi { .. })) => {
-                if ffmpeg_info.has_video_filter(&KnownVideoFilter::PadVaapi) {
-                    VideoFilter::PadVaapi { size: size.clone() }
-                } else {
-                    self.clone()
-                }
-            }
-            _ => self.clone(),
         }
     }
 

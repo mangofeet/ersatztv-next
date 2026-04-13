@@ -1,11 +1,17 @@
+use crate::ffmpeg_info::FfmpegInfo;
 use crate::hw_accel::HwAccel;
 use crate::pipeline::{FrameSurface, PixelFormat, VideoFormat};
 use crate::video_codec::VideoCodec;
+use crate::video_filter::VideoFilter;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VideoToolbox;
 
 impl HwAccel for VideoToolbox {
+    fn best_filter(&self, video_filter: &VideoFilter, _ffmpeg_info: &FfmpegInfo) -> VideoFilter {
+        video_filter.clone()
+    }
+
     fn can_decode(&self, codec: &str, pixel_format: &PixelFormat) -> bool {
         match pixel_format.bit_depth() {
             10 => matches!(codec, "hevc"),

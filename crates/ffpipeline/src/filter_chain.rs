@@ -1,6 +1,6 @@
 use crate::audio_filter::AudioFilter;
 use crate::ffmpeg_info::FfmpegInfo;
-use crate::hw_accel::HardwareAccel;
+use crate::hw_accel::{HardwareAccel, HwAccel};
 use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
 use crate::video_filter::VideoFilter;
 
@@ -80,7 +80,10 @@ impl FilterChain {
         for filter in &self.filters {
             match filter {
                 PipelineFilter::Video(video_filter) => {
-                    let best = video_filter.best_for(accel, ffmpeg_info);
+                    let best = match accel {
+                        Some(a) => a.best_filter(video_filter, ffmpeg_info),
+                        _ => video_filter.clone(),
+                    };
 
                     if let Some(required) = best.required_surface()
                         && current_state.surface != required

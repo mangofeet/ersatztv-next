@@ -6,11 +6,18 @@ use crate::error::FFPipelineError;
 use crate::hw_accel::{HardwareAccel, HwAccel};
 
 static KNOWN_ACCELS: &[&str] = &["cuda", "qsv", "vaapi", "videotoolbox"];
-static KNOWN_FILTERS: &[&str] = &["pad_cuda", "pad_vaapi", "scale_vaapi", "vpp_qsv"];
+static KNOWN_FILTERS: &[&str] = &[
+    "pad_cuda",
+    "pad_vaapi",
+    "scale_cuda",
+    "scale_vaapi",
+    "vpp_qsv",
+];
 
 pub enum KnownVideoFilter {
     PadCuda,
     PadVaapi,
+    ScaleCuda,
     ScaleVaapi,
     VppQsv,
 }
@@ -46,6 +53,7 @@ impl FfmpegInfo {
         if let Some(filter_string) = match filter {
             KnownVideoFilter::PadCuda => Some("pad_cuda"),
             KnownVideoFilter::PadVaapi => Some("pad_vaapi"),
+            KnownVideoFilter::ScaleCuda => Some("scale_cuda"),
             KnownVideoFilter::ScaleVaapi => Some("scale_vaapi"),
             KnownVideoFilter::VppQsv => Some("vpp_qsv"),
         } {

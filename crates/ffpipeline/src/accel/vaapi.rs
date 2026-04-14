@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 
+use crate::capabilities::vaapi::VaapiCapabilities;
 use crate::ffmpeg_info::{FfmpegInfo, KnownVideoFilter};
 use crate::filter_chain::PipelineFilter;
 use crate::frame_size::FrameSize;
@@ -8,7 +9,7 @@ use crate::pipeline::{FrameState, FrameSurface, PixelFormat, VideoFormat};
 use crate::video_codec::VideoCodec;
 use crate::video_filter::{ForceOriginalAspectRatio, HwVideoFilter, VideoFilter};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum VaapiDriver {
     Ihd,
     I965,
@@ -25,10 +26,11 @@ impl Display for VaapiDriver {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Vaapi {
     pub device: String,
     pub driver: VaapiDriver,
+    pub capabilities: VaapiCapabilities,
 }
 
 impl HwAccel for Vaapi {
@@ -54,12 +56,20 @@ impl HwAccel for Vaapi {
         }
     }
 
-    fn can_decode(&self, codec: &str, pixel_format: &PixelFormat) -> bool {
-        match pixel_format.bit_depth() {
-            10 => matches!(codec, "hevc"),
-            8 => matches!(codec, "h264" | "hevc" | "mpeg2video"),
-            _ => false,
+    fn can_decode(&self, codec: &str, profile: &str, pixel_format: &PixelFormat) -> bool {
+        let result = self
+            .capabilities
+            .can_decode(codec, profile, pixel_format.bit_depth());
+
+        if !result {
+            log::debug!(
+                "VAAPI does not support decoding {}/{}, will use software decoder",
+                codec,
+                profile
+            );
         }
+
+        result
     }
 
     fn codec_for_format(&self, format: &VideoFormat) -> VideoCodec {
@@ -85,8 +95,6 @@ impl HwAccel for Vaapi {
         vec![
             String::from("-hwaccel"),
             String::from("vaapi"),
-            String::from("-vaapi_device"),
-            self.device.clone(),
             String::from("-hwaccel_output_format"),
             String::from("vaapi"),
         ]
@@ -104,8 +112,10 @@ impl HwAccel for Vaapi {
         "vaapi"
     }
 
-    fn format_filter(&self, _pixel_format: &PixelFormat) -> Option<VideoFilter> {
-        None
+    fn format_filter(&self, pixel_format: &PixelFormat) -> Option<VideoFilter> {
+        Some(VideoFilter::Hardware(Box::new(FormatVaapi {
+            format: pixel_format.clone(),
+        })))
     }
 
     fn frame_surface(&self) -> FrameSurface {
@@ -113,7 +123,7 @@ impl HwAccel for Vaapi {
     }
 
     fn init_hw_device(&self) -> Vec<String> {
-        Vec::new()
+        vec![String::from("-vaapi_device"), self.device.clone()]
     }
 
     fn output_format(&self, source_pixel_format: &PixelFormat) -> PixelFormat {
@@ -201,5 +211,29 @@ impl HwVideoFilter for PadVaapi {
         self.size
             .as_ref()
             .map(|s| format!("pad_vaapi={}:{}:-1:-1:color=black", s.width, s.height))
+    }
+}
+
+#[derive(Clone)]
+struct FormatVaapi {
+    format: PixelFormat,
+}
+
+impl HwVideoFilter for FormatVaapi {
+    fn evaluate(&self, _state: &FrameState) -> Option<VideoFilter> {
+        // called before this is used
+        None
+    }
+
+    fn apply_to(&self, state: &mut FrameState) {
+        state.pixel_format = self.format.clone();
+    }
+
+    fn required_surface(&self) -> FrameSurface {
+        FrameSurface::Vaapi
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        Some(format!("scale_vaapi=format={}", self.format.as_arg()))
     }
 }

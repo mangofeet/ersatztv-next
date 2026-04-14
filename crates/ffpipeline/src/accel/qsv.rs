@@ -6,7 +6,7 @@ use crate::pipeline::{FrameState, FrameSurface, PixelFormat, VideoFormat};
 use crate::video_codec::VideoCodec;
 use crate::video_filter::{HwVideoFilter, VideoFilter};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Qsv;
 
 impl HwAccel for Qsv {
@@ -25,7 +25,7 @@ impl HwAccel for Qsv {
         }
     }
 
-    fn can_decode(&self, codec: &str, pixel_format: &PixelFormat) -> bool {
+    fn can_decode(&self, codec: &str, _profile: &str, pixel_format: &PixelFormat) -> bool {
         match pixel_format.bit_depth() {
             10 => matches!(codec, "av1" | "hevc"),
             8 => matches!(codec, "av1" | "h264" | "hevc" | "mpeg2video"),

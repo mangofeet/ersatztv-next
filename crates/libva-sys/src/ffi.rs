@@ -1,11 +1,7 @@
 use std::ffi::c_char;
 use std::ffi::c_int;
-use std::ffi::c_void;
 
-pub type VADisplay = *mut c_void;
-pub type VAStatus = c_int;
-pub type VAProfile = c_int;
-pub type VAEntrypoint = c_int;
+use super::{VADisplay, VAEntrypoint, VAProfile, VAStatus};
 
 unsafe extern "C" {
     pub fn vaGetDisplayDRM(fd: c_int) -> VADisplay;

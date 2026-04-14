@@ -379,6 +379,7 @@ version = "0.1.0"
 dependencies = [
  "dyn-clone",
  "libva-sys",
+ "libvpl-sys",
  "log",
  "serde",
  "serde_json",
@@ -663,6 +664,13 @@ dependencies = [
 
 [[package]]
 name = "libva-sys"
+version = "0.1.0"
+dependencies = [
+ "pkg-config",
+]
+
+[[package]]
+name = "libvpl-sys"
 version = "0.1.0"
 dependencies = [
  "pkg-config",

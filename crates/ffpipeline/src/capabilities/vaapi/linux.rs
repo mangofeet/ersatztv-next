@@ -5,7 +5,7 @@ use std::os::unix::io::AsRawFd;
 
 use libva_sys::*;
 
-use super::VaapiCapabilities;
+use crate::capabilities::vaapi::VaapiCapabilities;
 use crate::error::FFPipelineError;
 use crate::error::FFPipelineError::VaapiCapabilitiesError;
 

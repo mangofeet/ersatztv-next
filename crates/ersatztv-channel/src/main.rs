@@ -5,8 +5,9 @@ mod playlist_manager;
 mod playout_loader;
 mod pts_scanner;
 
-use clap::Parser;
 use std::path::PathBuf;
+
+use clap::Parser;
 
 use crate::channel_session::ChannelSession;
 use crate::config::ChannelConfig;

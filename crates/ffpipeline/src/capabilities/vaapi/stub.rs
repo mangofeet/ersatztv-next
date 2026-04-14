@@ -1,4 +1,4 @@
-use super::VaapiCapabilities;
+use crate::capabilities::vaapi::VaapiCapabilities;
 use crate::error::FFPipelineError;
 use crate::error::FFPipelineError::VaapiCapabilitiesError;
 

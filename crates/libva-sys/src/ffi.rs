@@ -1,7 +1,7 @@
 use std::ffi::c_char;
 use std::ffi::c_int;
 
-use super::{VADisplay, VAEntrypoint, VAProfile, VAStatus};
+use crate::{VADisplay, VAEntrypoint, VAProfile, VAStatus};
 
 unsafe extern "C" {
     pub fn vaGetDisplayDRM(fd: c_int) -> VADisplay;

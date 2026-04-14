@@ -53,7 +53,8 @@ jobs:
       - run: rustup update stable
       - run: rustup update nightly
       - run: rustup show active-toolchain
-      - run: rustup component add rustfmt clippy
+      - run: rustup component add clippy
+      - run: rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt
 
       - name: Install libva development headers
         if: runner.os == 'Linux'

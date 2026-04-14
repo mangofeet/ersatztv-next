@@ -77,11 +77,11 @@ jobs:
             rust_target: x86_64-unknown-linux-gnu
             exe_ext: ""
             archive_ext: .tar.gz
-          - os: ubuntu-latest
-            target: linux-musl-x64
-            rust_target: x86_64-unknown-linux-musl
-            exe_ext: ""
-            archive_ext: .tar.gz
+#          - os: ubuntu-latest
+#            target: linux-musl-x64
+#            rust_target: x86_64-unknown-linux-musl
+#            exe_ext: ""
+#            archive_ext: .tar.gz
           - os: ubuntu-latest
             target: linux-arm
             rust_target: armv7-unknown-linux-gnueabihf
@@ -176,8 +176,8 @@ jobs:
             archive_ext: .zip
           - target: linux-x64
             archive_ext: .tar.gz
-          - target: linux-musl-x64
-            archive_ext: .tar.gz
+#          - target: linux-musl-x64
+#            archive_ext: .tar.gz
           - target: linux-arm
             archive_ext: .tar.gz
           - target: linux-arm64

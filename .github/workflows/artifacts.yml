@@ -110,7 +110,11 @@ jobs:
 
       - name: Install libva development headers
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libva-dev
+        run: |
+          sudo dpkg --add-architecture armhf
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y libva-dev libva-dev:armhf libva-dev:arm64
 
       - name: Build
         shell: bash

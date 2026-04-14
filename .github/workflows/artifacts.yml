@@ -107,14 +107,7 @@ jobs:
         uses: taiki-e/setup-cross-toolchain-action@v1
         with:
           target: ${{ matrix.rust_target }}
-
-      - name: Install libva development headers
-        if: runner.os == 'Linux'
-        run: |
-          sudo dpkg --add-architecture armhf
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update
-          sudo apt-get install -y libva-dev libva-dev:armhf libva-dev:arm64
+          package: libva-dev
 
       - name: Build
         shell: bash

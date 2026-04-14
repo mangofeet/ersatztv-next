@@ -1,37 +1,77 @@
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::fs::File;
-use std::os::unix::io::AsRawFd;
 
+#[cfg(target_os = "linux")]
 use libva_sys::*;
 
 use crate::error::FFPipelineError;
 use crate::error::FFPipelineError::VaapiCapabilitiesError;
 
+//const VA_PROFILE_NONE: VAProfile = -1;
+const VA_PROFILE_MPEG2_SIMPLE: VAProfile = 0;
+const VA_PROFILE_MPEG2_MAIN: VAProfile = 1;
+//const VA_PROFILE_MPEG4_SIMPLE: VAProfile = 2;
+//const VA_PROFILE_MPEG4_ADVANCED_SIMPLE: VAProfile = 3;
+//const VA_PROFILE_MPEG4_MAIN: VAProfile = 4;
+const VA_PROFILE_H264_MAIN: VAProfile = 6;
+const VA_PROFILE_H264_HIGH: VAProfile = 7;
+const VA_PROFILE_VC1_SIMPLE: VAProfile = 8;
+const VA_PROFILE_VC1_MAIN: VAProfile = 9;
+const VA_PROFILE_VC1_ADVANCED: VAProfile = 10;
+const VA_PROFILE_H264_CONSTRAINED_BASELINE: VAProfile = 13;
+const VA_PROFILE_HEVC_MAIN: VAProfile = 17;
+const VA_PROFILE_HEVC_MAIN10: VAProfile = 18;
+const VA_PROFILE_VP9_PROFILE0: VAProfile = 19;
+const VA_PROFILE_VP9_PROFILE1: VAProfile = 20;
+const VA_PROFILE_VP9_PROFILE2: VAProfile = 21;
+const VA_PROFILE_VP9_PROFILE3: VAProfile = 22;
+const VA_PROFILE_AV1_PROFILE0: VAProfile = 32;
+//const VA_PROFILE_AV1_PROFILE1: VAProfile = 33;
+//const VA_PROFILE_H264_HIGH10: VAProfile = 36;
+
+const VA_ENTRYPOINT_VLD: VAEntrypoint = 1;
+//const VA_ENTRYPOINT_ENC_SLICE: VAEntrypoint = 6;
+//const VA_ENTRYPOINT_ENC_SLICE_LP: VAEntrypoint = 8;
+
+const VA_STATUS_SUCCESS: VAStatus = 0;
+
 #[derive(Debug, Clone)]
 pub struct VaapiCapabilities {
     vendor: String,
-    supported: HashSet<(VAProfile, VAEntrypoint)>,
+    supported: HashSet<(i32, i32)>,
 }
 
 impl VaapiCapabilities {
     pub fn probe(device: &str, driver: &str) -> Result<VaapiCapabilities, FFPipelineError> {
-        let prev = std::env::var("LIBVA_DRIVER_NAME").ok();
-        unsafe { std::env::set_var("LIBVA_DRIVER_NAME", driver) };
+        #[cfg(not(target_os = "linux"))]
+        {
+            return Err(VaapiCapabilitiesError(String::from(
+                "VAAPI is only supported on Linux",
+            )));
+        }
 
-        let result = Self::probe_inner(device);
+        #[cfg(target_os = "linux")]
+        {
+            let prev = std::env::var("LIBVA_DRIVER_NAME").ok();
+            unsafe { std::env::set_var("LIBVA_DRIVER_NAME", driver) };
 
-        unsafe {
-            match prev {
-                Some(v) => std::env::set_var("LIBVA_DRIVER_NAME", v),
-                None => std::env::remove_var("LIBVA_DRIVER_NAME"),
-            }
-        };
+            let result = Self::probe_inner(device);
 
-        result
+            unsafe {
+                match prev {
+                    Some(v) => std::env::set_var("LIBVA_DRIVER_NAME", v),
+                    None => std::env::remove_var("LIBVA_DRIVER_NAME"),
+                }
+            };
+
+            result
+        }
     }
 
     fn probe_inner(device: &str) -> Result<VaapiCapabilities, FFPipelineError> {
+        use std::os::unix::io::AsRawFd;
+
         let file = File::options()
             .read(true)
             .write(true)

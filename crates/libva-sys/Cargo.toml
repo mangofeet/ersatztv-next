@@ -2,7 +2,6 @@
 name = "libva-sys"
 version = "0.1.0"
 edition = "2024"
-links = "va"
 
 [build-dependencies]
 pkg-config = { workspace = true }

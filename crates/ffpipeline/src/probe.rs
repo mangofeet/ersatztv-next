@@ -1,8 +1,8 @@
 use std::fmt::Formatter;
-use std::process::Command;
 use std::time::Duration;
 
 use serde::Deserialize;
+use tokio::process::Command;
 
 use crate::error::FFPipelineError;
 use crate::frame_rate::FrameRate;
@@ -113,7 +113,10 @@ struct ProbeOutput {
     format: ProbeOutputFormat,
 }
 
-pub fn probe(ffprobe_path: &std::path::Path, path: &str) -> Result<ProbeResult, FFPipelineError> {
+pub async fn probe(
+    ffprobe_path: &std::path::Path,
+    path: &str,
+) -> Result<ProbeResult, FFPipelineError> {
     let output = Command::new(ffprobe_path)
         .args([
             "-hide_banner",
@@ -126,6 +129,7 @@ pub fn probe(ffprobe_path: &std::path::Path, path: &str) -> Result<ProbeResult, 
             path,
         ])
         .output()
+        .await
         .map_err(|_| FFPipelineError::ProbeFailed)?;
 
     if !output.status.success() {
@@ -135,7 +139,7 @@ pub fn probe(ffprobe_path: &std::path::Path, path: &str) -> Result<ProbeResult, 
     parse_ffprobe_stdout(path, output.stdout)
 }
 
-pub fn probe_lavfi(
+pub async fn probe_lavfi(
     ffprobe_path: &std::path::Path,
     ffmpeg_path: &std::path::Path,
     lavfi: &str,
@@ -147,7 +151,12 @@ pub fn probe_lavfi(
         .spawn()
         .map_err(|_| FFPipelineError::ProbeFailed)?;
 
-    let ffmpeg_stdout = ffmpeg.stdout.take().ok_or(FFPipelineError::ProbeFailed)?;
+    let ffmpeg_stdout: std::process::Stdio = ffmpeg
+        .stdout
+        .take()
+        .ok_or(FFPipelineError::ProbeFailed)?
+        .try_into()
+        .map_err(|_| FFPipelineError::ProbeFailed)?;
 
     let output = Command::new(ffprobe_path)
         .args([
@@ -164,9 +173,10 @@ pub fn probe_lavfi(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .output()
+        .await
         .map_err(|_| FFPipelineError::ProbeFailed)?;
 
-    let _ = ffmpeg.wait();
+    let _ = ffmpeg.wait().await;
 
     if !output.status.success() {
         return Err(FFPipelineError::ProbeFailed);

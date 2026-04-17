@@ -81,7 +81,7 @@ impl FilterChain {
             match filter {
                 PipelineFilter::Video(video_filter) => {
                     let mut best = match accel {
-                        Some(a) => a.best_filter(video_filter, ffmpeg_info),
+                        Some(a) => a.best_filter(video_filter, ffmpeg_info, &current_state),
                         _ => video_filter.clone(),
                     };
 
@@ -108,6 +108,7 @@ impl FilterChain {
                             if is_format_supported {
                                 let upload = VideoFilter::HwUpload {
                                     target_surface: required.clone(),
+                                    bit_depth: current_state.pixel_format.bit_depth(),
                                 };
                                 upload.apply_to(&mut current_state);
                                 resolved.push(PipelineFilter::Video(upload))
@@ -126,6 +127,7 @@ impl FilterChain {
 
                                     let upload = VideoFilter::HwUpload {
                                         target_surface: required,
+                                        bit_depth: current_state.pixel_format.bit_depth(),
                                     };
                                     upload.apply_to(&mut current_state);
                                     resolved.push(PipelineFilter::Video(upload));
@@ -169,6 +171,7 @@ impl FilterChain {
             } else {
                 let upload = VideoFilter::HwUpload {
                     target_surface: encoder_surface.clone(),
+                    bit_depth: current_state.pixel_format.bit_depth(),
                 };
                 upload.apply_to(&mut current_state);
                 resolved.push(PipelineFilter::Video(upload))

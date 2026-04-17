@@ -23,7 +23,12 @@ impl Cuda {
 }
 
 impl HwAccel for Cuda {
-    fn best_filter(&self, video_filter: &VideoFilter, ffmpeg_info: &FfmpegInfo) -> VideoFilter {
+    fn best_filter(
+        &self,
+        video_filter: &VideoFilter,
+        ffmpeg_info: &FfmpegInfo,
+        _current_state: &FrameState,
+    ) -> VideoFilter {
         match video_filter {
             VideoFilter::Scale {
                 size,
@@ -142,10 +147,6 @@ impl HwAccel for Cuda {
         FrameSurface::Cuda
     }
 
-    fn envs(&self) -> Vec<(String, String)> {
-        Vec::new()
-    }
-
     fn format_filter(&self, pixel_format: &PixelFormat) -> Option<VideoFilter> {
         Some(VideoFilter::Hardware(Box::new(FormatCuda {
             format: pixel_format.clone(),
@@ -177,13 +178,6 @@ impl HwAccel for Cuda {
 
     fn known_accel(&self) -> &KnownHardwareAccel {
         &KnownHardwareAccel::Cuda
-    }
-
-    fn output_format(&self, source_pixel_format: &PixelFormat) -> PixelFormat {
-        match source_pixel_format.bit_depth() {
-            10 => PixelFormat::P010le,
-            _ => PixelFormat::Nv12,
-        }
     }
 }
 

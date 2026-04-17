@@ -1,6 +1,5 @@
 use crate::capabilities::qsv::QsvCapabilities;
 use crate::ffmpeg_info::{FfmpegInfo, KnownHardwareAccel, KnownVideoFilter};
-use crate::filter_chain::PipelineFilter;
 use crate::frame_size::FrameSize;
 use crate::hw_accel::HwAccel;
 use crate::pipeline::{FrameState, FrameSurface, PixelFormat, VideoFormat};
@@ -13,7 +12,12 @@ pub struct Qsv {
 }
 
 impl HwAccel for Qsv {
-    fn best_filter(&self, video_filter: &VideoFilter, ffmpeg_info: &FfmpegInfo) -> VideoFilter {
+    fn best_filter(
+        &self,
+        video_filter: &VideoFilter,
+        ffmpeg_info: &FfmpegInfo,
+        _current_state: &FrameState,
+    ) -> VideoFilter {
         match video_filter {
             VideoFilter::Scale { size, .. }
                 if ffmpeg_info.has_video_filter(&KnownVideoFilter::VppQsv) =>
@@ -76,24 +80,12 @@ impl HwAccel for Qsv {
         ]
     }
 
-    fn decoder_filters(&self) -> Vec<PipelineFilter> {
-        Vec::new()
-    }
-
     fn decoder_frame_surface(&self) -> FrameSurface {
         FrameSurface::Qsv
     }
 
     fn encoder_frame_surface(&self) -> FrameSurface {
         FrameSurface::Qsv
-    }
-
-    fn envs(&self) -> Vec<(String, String)> {
-        Vec::new()
-    }
-
-    fn format_filter(&self, _pixel_format: &PixelFormat) -> Option<VideoFilter> {
-        None
     }
 
     fn initialize(&self, _ffmpeg_info: &FfmpegInfo, _is_hdr: bool) -> Self {
@@ -111,13 +103,6 @@ impl HwAccel for Qsv {
 
     fn known_accel(&self) -> &KnownHardwareAccel {
         &KnownHardwareAccel::Qsv
-    }
-
-    fn output_format(&self, source_pixel_format: &PixelFormat) -> PixelFormat {
-        match source_pixel_format.bit_depth() {
-            10 => PixelFormat::P010le,
-            _ => PixelFormat::Nv12,
-        }
     }
 
     fn supports_pixel_format(&self, pixel_format: &PixelFormat) -> bool {

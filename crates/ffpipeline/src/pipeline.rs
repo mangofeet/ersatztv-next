@@ -11,7 +11,7 @@ use crate::frame_rate::FrameRate;
 use crate::frame_size::FrameSize;
 use crate::global_option::{GlobalOption, LogLevel};
 use crate::hw_accel::{HardwareAccel, HwAccel};
-use crate::input::{InputSettings, InputSource};
+use crate::input::{FfmpegInputArgs, InputSettings, InputSource};
 use crate::output_option::OutputOption;
 use crate::output_settings::OutputSettings;
 use crate::probe::{ProbeResultAudioStream, ProbeResultStream, ProbeResultVideoStream};
@@ -438,10 +438,7 @@ impl Pipeline {
 
                     // if more than one path, audio is probably separate from video
                     if distinct_paths.len() > 1 {
-                        if matches!(input_source, InputSource::Lavfi { .. }) {
-                            result.extend([String::from("-f"), String::from("lavfi")]);
-                        }
-
+                        result.extend(input_source.args_for_input());
                         result.extend([String::from("-i"), path.to_owned()]);
                     }
                 }
@@ -468,9 +465,7 @@ impl Pipeline {
                         result.extend([String::from("-readrate"), String::from("1.0")]);
                     }
 
-                    if matches!(input_source, InputSource::Lavfi { .. }) {
-                        result.extend([String::from("-f"), String::from("lavfi")]);
-                    }
+                    result.extend(input_source.args_for_input());
 
                     result.extend([String::from("-i"), path.to_owned()]);
                 }

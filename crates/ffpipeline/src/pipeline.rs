@@ -28,8 +28,11 @@ pub enum AudioFormat {
     Ac3,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Kbps(pub u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hz(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VideoFormat {
@@ -327,6 +330,7 @@ impl Pipeline {
                 OutputOption::AudioBitrate(final_output_settings.audio_bitrate),
                 OutputOption::AudioBuffer(final_output_settings.audio_buffer),
                 OutputOption::AudioChannels(final_output_settings.audio_channels),
+                OutputOption::AudioSampleRate(final_output_settings.audio_sample_rate),
                 OutputOption::VideoCodec(video_codec),
                 OutputOption::VideoBitrate(final_output_settings.video_bitrate),
                 OutputOption::VideoBuffer(final_output_settings.video_buffer),
@@ -350,6 +354,7 @@ impl Pipeline {
                     OutputOption::AudioBitrate(_)
                         | OutputOption::AudioBuffer(_)
                         | OutputOption::AudioChannels(_)
+                        | OutputOption::AudioSampleRate(_)
                 )
             });
 

@@ -208,6 +208,21 @@ impl FilterChain {
         self.filters = resolved;
     }
 
+    pub(crate) fn optimize(&mut self) {
+        // swap software scale before software tone map to reduce
+        // the amount of data that needs to be tone mapped
+        if let Some(tonemap_index) = self
+            .filters
+            .iter()
+            .position(|f| matches!(f, PipelineFilter::Video(VideoFilter::ToneMap { .. })))
+            && let Some(PipelineFilter::Video(VideoFilter::Scale { .. })) =
+                self.filters.get(tonemap_index + 1)
+        {
+            log::debug!("swapping software scale filter before software tonemap filter");
+            self.filters.swap(tonemap_index, tonemap_index + 1);
+        }
+    }
+
     pub(crate) fn build(&mut self, audio_label: &str, video_label: &str) {
         self.audio_label = audio_label.to_owned();
         self.video_label = video_label.to_owned();

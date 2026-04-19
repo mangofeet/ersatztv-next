@@ -700,7 +700,7 @@ impl ChannelSession {
                             self.channel_config
                                 .normalization
                                 .video
-                                .height
+                                .width
                                 .unwrap_or(1920),
                             self.channel_config
                                 .normalization

@@ -35,7 +35,9 @@ pub struct PlayoutConfig {
 
 #[derive(Deserialize, Clone, Debug, JsonSchema)]
 pub struct FfmpegConfig {
+    #[serde(default, deserialize_with = "deserialize_optional_path")]
     pub ffmpeg_path: Option<PathBuf>,
+    #[serde(default, deserialize_with = "deserialize_optional_path")]
     pub ffprobe_path: Option<PathBuf>,
     #[serde(default)]
     pub disabled_filters: Vec<String>,
@@ -114,8 +116,11 @@ pub struct VideoNormalizationConfig {
 #[derive(Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum VaapiDriver {
+    #[serde(alias = "ihd", alias = "iHD")]
     Ihd,
+    #[serde(alias = "i965")]
     I965,
+    #[serde(alias = "radeonsi", alias = "RadeonSI")]
     RadeonSI,
 }
 
@@ -271,11 +276,8 @@ impl ChannelConfig {
 
         reader.read_to_string(&mut config_string).await?;
 
-        // read as toml or json
-        let mut channel_config: ChannelConfig = toml::from_str(&config_string)
-            .map_err(|e| e.to_string())
-            .or_else(|_| serde_json::from_str(&config_string).map_err(|e| e.to_string()))
-            .map_err(ChannelError::ChannelConfigFailure)?;
+        let mut channel_config: ChannelConfig = serde_json::from_str(&config_string)
+            .map_err(|e| ChannelError::ChannelConfigFailure(e.to_string()))?;
 
         let playout_relative_to = std::env::current_dir()?;
 
@@ -292,7 +294,7 @@ impl ChannelConfig {
         let config_string = tokio::fs::read_to_string(path)
             .await
             .map_err(ChannelError::ChannelConfigIoFailure)?;
-        let mut channel_config: ChannelConfig = toml::from_str(&config_string)
+        let mut channel_config: ChannelConfig = serde_json::from_str(&config_string)
             .map_err(|e| ChannelError::ChannelConfigFailure(e.to_string()))?;
 
         let playout_relative_to =
@@ -362,4 +364,8 @@ fn deserialize_bit_depth<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u8>, 
         }
         other => Ok(other),
     }
+}
+
+fn deserialize_optional_path<'de, D: Deserializer<'de>>(d: D) -> Result<Option<PathBuf>, D::Error> {
+    Ok(Option::<PathBuf>::deserialize(d)?.filter(|p| !p.as_os_str().is_empty()))
 }

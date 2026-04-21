@@ -1,9 +1,12 @@
-#![cfg(target_os = "macos")]
+#![cfg(all(
+    any(target_os = "linux", target_os = "windows"),
+    any(target_arch = "x86", target_arch = "x86_64")
+))]
 mod common;
 
 use common::*;
-use ffpipeline::accel::video_toolbox::VideoToolbox;
-use ffpipeline::capabilities::videotoolbox::VideoToolboxCapabilities;
+use ffpipeline::accel::qsv::Qsv;
+use ffpipeline::capabilities::qsv::QsvCapabilities;
 use ffpipeline::ffmpeg_info::KnownHardwareAccel;
 use ffpipeline::frame_size::FrameSize;
 use ffpipeline::hw_accel::HardwareAccel;
@@ -11,13 +14,13 @@ use ffpipeline::pipeline::{AudioFormat, VideoFormat};
 use rstest::rstest;
 use tokio::sync::OnceCell;
 
-static VIDEOTOOLBOX_ACCEL: OnceCell<Option<HardwareAccel>> = OnceCell::const_new();
+static QSV_ACCEL: OnceCell<Option<HardwareAccel>> = OnceCell::const_new();
 
-async fn make_videotoolbox_accel() -> Option<&'static HardwareAccel> {
-    VIDEOTOOLBOX_ACCEL
+async fn make_qsv_accel() -> Option<&'static HardwareAccel> {
+    QSV_ACCEL
         .get_or_init(|| async {
-            let capabilities = VideoToolboxCapabilities::probe().ok()?;
-            Some(HardwareAccel::VideoToolbox(VideoToolbox { capabilities }))
+            let capabilities = QsvCapabilities::probe().ok()?;
+            Some(HardwareAccel::Qsv(Qsv { capabilities }))
         })
         .await
         .as_ref()
@@ -33,7 +36,7 @@ async fn transcode_matrix(
     target_size: FrameSize,
     #[values("1080p_h264.ts", "720p_h264.ts", "480p_h264.ts")] fixture_name: &'static str,
 ) {
-    run_videotoolbox_test_case(TestCase {
+    run_qsv_test_case(TestCase {
         fixture_name,
         params: TestOutputParams {
             audio_format: Some(af),
@@ -48,18 +51,15 @@ async fn transcode_matrix(
     .await;
 }
 
-async fn run_videotoolbox_test_case(mut test_case: TestCase) {
+async fn run_qsv_test_case(mut test_case: TestCase) {
     if let Some(env) = test_env().await {
-        if !env
-            .ffmpeg_info
-            .has_hw_accel(&KnownHardwareAccel::VideoToolbox)
-        {
-            eprintln!("skip: videotoolbox not available");
+        if !env.ffmpeg_info.has_hw_accel(&KnownHardwareAccel::Qsv) {
+            eprintln!("skip: qsv not available");
             return;
         }
 
-        let Some(accel) = make_videotoolbox_accel().await else {
-            eprintln!("skip: videotoolbox accel failed to probe");
+        let Some(accel) = make_qsv_accel().await else {
+            eprintln!("skip: qsv accel failed to probe");
             return;
         };
 

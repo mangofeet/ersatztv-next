@@ -63,7 +63,7 @@ impl HwAccel for Qsv {
             }),
             VideoFormat::Hevc => Some(VideoCodec {
                 codec_name: "hevc_qsv",
-                options: &["-low_power", "0", "-look_ahead", "0"],
+                options: &["-low_power", "0", "-look_ahead", "0", "-tag:v", "hvc1"],
                 preferred_pixel_format_8bit: Some(PixelFormat::Nv12),
                 preferred_pixel_format_10bit: Some(PixelFormat::P010le),
                 is_hardware: true,
@@ -82,6 +82,12 @@ impl HwAccel for Qsv {
 
     fn encoder_frame_surface(&self) -> FrameSurface {
         FrameSurface::Qsv
+    }
+
+    fn format_filter(&self, pixel_format: &PixelFormat) -> Option<VideoFilter> {
+        Some(VideoFilter::Hardware(Box::new(FormatQsv {
+            format: pixel_format.clone(),
+        })))
     }
 
     fn initialize(&self, _ffmpeg_info: &FfmpegInfo, _is_hdr: bool) -> Self {
@@ -128,5 +134,30 @@ impl HwVideoFilter for ScaleQsv {
         self.size.as_ref().map(|s|
             // TODO: anamorphic handling
             format!("vpp_qsv=w={}:h={}", s.width, s.height))
+    }
+}
+
+#[derive(Clone)]
+struct FormatQsv {
+    format: PixelFormat,
+}
+
+impl HwVideoFilter for FormatQsv {
+    fn evaluate(&self, _state: &FrameState) -> Option<VideoFilter> {
+        // called before this is used
+        None
+    }
+
+    fn apply_to(&self, state: &mut FrameState) {
+        state.pixel_format = self.format.clone();
+        state.surface = FrameSurface::Qsv;
+    }
+
+    fn required_surface(&self) -> FrameSurface {
+        FrameSurface::Qsv
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        Some(format!("vpp_qsv=format={}", self.format.as_arg()))
     }
 }

@@ -1,9 +1,36 @@
+use std::str::FromStr;
+
 use crate::pipeline::FrameState;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FrameSize {
     pub width: u32,
     pub height: u32,
+}
+
+impl FromStr for FrameSize {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split('x');
+        let (w, h) = match (parts.next(), parts.next(), parts.next()) {
+            (Some(w), Some(h), None) => (w, h),
+            _ => {
+                return Err(format!(
+                    "invalid frame size format: '{s}', expected 'WIDTHxHEIGHT'"
+                ));
+            }
+        };
+        let width = w
+            .trim()
+            .parse::<u32>()
+            .map_err(|e| format!("invalid width '{w}': {e}"))?;
+        let height = h
+            .trim()
+            .parse::<u32>()
+            .map_err(|e| format!("invalid height '{h}': {e}"))?;
+        Ok(FrameSize { width, height })
+    }
 }
 
 impl FrameSize {

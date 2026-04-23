@@ -1,5 +1,3 @@
-use std::fmt::{Display, Formatter};
-
 use crate::ArgVec;
 use crate::accel::opencl::TonemapOpencl;
 use crate::capabilities::vaapi::VaapiCapabilities;
@@ -13,21 +11,14 @@ use crate::video_filter::{
     VideoFilterOp,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, strum::Display)]
 pub enum VaapiDriver {
+    #[strum(serialize = "iHD")]
     Ihd,
+    #[strum(serialize = "i965")]
     I965,
+    #[strum(serialize = "radeonsi")]
     RadeonSI,
-}
-
-impl Display for VaapiDriver {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VaapiDriver::Ihd => write!(f, "iHD"),
-            VaapiDriver::I965 => write!(f, "i965"),
-            VaapiDriver::RadeonSI => write!(f, "radeonsi"),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -63,10 +54,15 @@ impl HwAccel for Vaapi {
             }
 
             VideoFilter::ToneMap(ToneMapFilter { algorithm, format }) => {
-                if let Some(hw_filter) = ffmpeg_info.find_best_fit(&[
-                    KnownVideoFilter::TonemapOpencl,
-                    KnownVideoFilter::TonemapVaapi,
-                ]) {
+                let mut tonemap_options = vec![KnownVideoFilter::TonemapVaapi];
+                // Pipeline only supports OpenCL for the iHD driver currently.
+                // In the future, we may want to support OpenCL for Radeon as well, but
+                // we will need to implement proper OpenCL capability detection.
+                if self.driver == VaapiDriver::Ihd {
+                    // Prepend because OpenCL is preferred.
+                    tonemap_options.insert(0, KnownVideoFilter::TonemapOpencl);
+                }
+                if let Some(hw_filter) = ffmpeg_info.find_best_fit(tonemap_options.as_slice()) {
                     match hw_filter {
                         KnownVideoFilter::TonemapOpencl => TonemapOpencl {
                             algorithm: algorithm.clone(),
@@ -76,7 +72,10 @@ impl HwAccel for Vaapi {
                             },
                         }
                         .into(),
-                        // TODO: Implement tonemap vaapi
+                        KnownVideoFilter::TonemapVaapi => TonemapVaapi {
+                            output_format: self.output_format(format),
+                        }
+                        .into(),
                         _ => video_filter.clone(),
                     }
                 } else {
@@ -222,6 +221,7 @@ impl HwAccel for Vaapi {
             // Logic is a bit disjoint. It would be better if "best" filter could
             // append state around the pipeline.
             needs_opencl_device: is_hdr
+                && self.driver == VaapiDriver::Ihd
                 && ffmpeg_info
                     .find_best_fit(&[
                         KnownVideoFilter::TonemapOpencl,
@@ -351,5 +351,34 @@ impl VideoFilterOp for FormatVaapi {
 
     fn as_arg(&self) -> Option<String> {
         Some(format!("scale_vaapi=format={}", self.format.as_arg()))
+    }
+}
+
+#[derive(Clone)]
+pub struct TonemapVaapi {
+    pub(crate) output_format: PixelFormat,
+}
+
+impl VideoFilterOp for TonemapVaapi {
+    fn evaluate(&self, _state: &FrameState, _ffmpeg_info: &FfmpegInfo) -> Option<VideoFilter> {
+        None
+    }
+
+    fn apply_to(&self, state: &mut FrameState) {
+        state.is_hdr = false;
+        state.pixel_format = self.output_format.clone();
+        state.surface = FrameSurface::Vaapi;
+    }
+
+    fn required_surface(&self) -> Option<FrameSurface> {
+        Some(FrameSurface::Vaapi)
+    }
+
+    fn as_arg(&self) -> Option<String> {
+        format!(
+            "tonemap_vaapi=format={}:t=bt709:m=bt709:p=bt709",
+            self.output_format.as_arg()
+        )
+        .into()
     }
 }

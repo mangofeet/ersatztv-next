@@ -2,6 +2,7 @@ use crate::ArgVec;
 use crate::audio_filter::AudioFilter;
 use crate::ffmpeg_info::FfmpegInfo;
 use crate::hw_accel::{HardwareAccel, HwAccel};
+use crate::overlay_filter::{OverlayFilter, OverlayKindOp};
 use crate::pipeline::{FrameState, FrameSurface, PixelFormat};
 use crate::video_filter::{
     FormatFilter, HwDownloadFilter, HwUploadFilter, VideoFilter, VideoFilterOp,
@@ -11,6 +12,7 @@ use crate::video_filter::{
 pub enum PipelineFilter {
     Audio(AudioFilter),
     Video(VideoFilter),
+    Overlay(OverlayFilter),
 }
 
 #[derive(Clone)]
@@ -62,6 +64,11 @@ impl FilterChain {
                         new_filter.apply_to(&mut state);
                         active_filters.push(PipelineFilter::Video(new_filter));
                     }
+                }
+                PipelineFilter::Overlay(of) => {
+                    let new_filter = of.clone();
+                    new_filter.kind.apply_to(&mut state);
+                    active_filters.push(PipelineFilter::Overlay(new_filter));
                 }
             }
         }
@@ -120,6 +127,71 @@ impl FilterChain {
                     //audio_filter.apply_to(&mut current_state);
                     resolved.push(filter.clone());
                 }
+                PipelineFilter::Overlay(overlay) => {
+                    let mut best = match accel {
+                        Some(a) => a.best_overlay(overlay, ffmpeg_info, &current_state),
+                        _ => overlay.clone(),
+                    };
+
+                    // ensure main input matches overlay required surface
+                    let main_req = best.kind.main_input_state(&current_state);
+                    if current_state.surface != main_req.surface {
+                        self.transfer_surface(
+                            accel,
+                            &mut resolved,
+                            &mut current_state,
+                            main_req.surface,
+                            encoder_pixel_format,
+                        );
+                    }
+
+                    // ensure main input matches overlay required pixel format
+                    if current_state.pixel_format != main_req.pixel_format {
+                        Self::convert_pixel_format(
+                            &mut resolved,
+                            &mut current_state,
+                            &main_req.pixel_format,
+                            accel,
+                        );
+                    }
+
+                    // ensure secondary input matches overlay required surface, pixel format
+                    let sec_req = best.kind.secondary_input_state(&current_state);
+                    let mut sec = FilterChain::new(
+                        best.secondary
+                            .iter()
+                            .cloned()
+                            .map(PipelineFilter::Video)
+                            .collect(),
+                    );
+                    sec.evaluate(&best.secondary_initial_state, ffmpeg_info);
+
+                    // ignore hw accel if secondary needs to stay in software anyway
+                    let sec_accel = if sec_req.surface == FrameSurface::System {
+                        &None
+                    } else {
+                        accel
+                    };
+
+                    sec.resolve(
+                        ffmpeg_info,
+                        sec_accel,
+                        &best.secondary_initial_state,
+                        &sec_req.surface,
+                        &Some(sec_req.pixel_format),
+                    );
+                    best.secondary = sec
+                        .filters
+                        .into_iter()
+                        .filter_map(|f| match f {
+                            PipelineFilter::Video(v) => Some(v),
+                            _ => None,
+                        })
+                        .collect();
+
+                    best.kind.apply_to(&mut current_state);
+                    resolved.push(PipelineFilter::Overlay(best));
+                }
             }
         }
 
@@ -144,29 +216,7 @@ impl FilterChain {
         if let Some(pixel_format) = encoder_pixel_format
             && current_state.pixel_format != *pixel_format
         {
-            log::debug!(
-                "current pixel format {:?} doesn't match encoder {:?}",
-                current_state.pixel_format,
-                *pixel_format
-            );
-
-            match (&current_state.surface, accel) {
-                (FrameSurface::System, _) => {
-                    let format: VideoFilter = FormatFilter {
-                        format: pixel_format.to_owned(),
-                    }
-                    .into();
-                    format.apply_to(&mut current_state);
-                    resolved.push(PipelineFilter::Video(format))
-                }
-                (_, Some(a)) => {
-                    if let Some(f) = a.format_filter(pixel_format) {
-                        f.apply_to(&mut current_state);
-                        resolved.push(PipelineFilter::Video(f));
-                    }
-                }
-                _ => {}
-            }
+            Self::convert_pixel_format(&mut resolved, &mut current_state, pixel_format, accel);
         }
 
         self.filters = resolved;
@@ -259,6 +309,37 @@ impl FilterChain {
         false
     }
 
+    fn convert_pixel_format(
+        resolved: &mut Vec<PipelineFilter>,
+        current_state: &mut FrameState,
+        pixel_format: &PixelFormat,
+        accel: &Option<HardwareAccel>,
+    ) {
+        log::debug!(
+            "current pixel format {:?} doesn't match required {:?}",
+            current_state.pixel_format,
+            *pixel_format
+        );
+
+        match (&current_state.surface, accel) {
+            (FrameSurface::System, _) => {
+                let format: VideoFilter = FormatFilter {
+                    format: pixel_format.to_owned(),
+                }
+                .into();
+                format.apply_to(current_state);
+                resolved.push(PipelineFilter::Video(format))
+            }
+            (_, Some(a)) => {
+                if let Some(f) = a.format_filter(pixel_format) {
+                    f.apply_to(current_state);
+                    resolved.push(PipelineFilter::Video(f));
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn optimize(&mut self) {
         // swap software scale before software tone map to reduce
         // the amount of data that needs to be tone mapped
@@ -274,7 +355,12 @@ impl FilterChain {
         }
     }
 
-    pub(crate) fn build(&mut self, audio_label: &str, video_label: &str) {
+    pub(crate) fn build(
+        &mut self,
+        audio_label: &str,
+        video_label: &str,
+        subtitle_label: Option<&String>,
+    ) {
         self.audio_label = audio_label.to_owned();
         self.video_label = video_label.to_owned();
 
@@ -313,30 +399,76 @@ impl FilterChain {
         let video_filter_count = self
             .filters
             .iter()
-            .filter(|f| matches!(f, PipelineFilter::Video(_)))
+            .filter(|f| matches!(f, PipelineFilter::Video(_) | PipelineFilter::Overlay(_)))
             .count();
 
         if video_filter_count > 0 {
-            let mut filter_chain = String::new();
+            let mut current_in = self.video_label.clone();
+            let mut pending: Vec<String> = Vec::new();
+            let mut overlay_num: usize = 0;
 
-            filter_chain.push_str(&format!("[{}]", self.video_label));
+            let flush =
+                |chains: &mut Vec<String>, pending: &mut Vec<String>, from: &str, to: &str| {
+                    chains.push(format!("[{}]{}[{}]", from, pending.join(","), to));
+                    pending.clear();
+                };
 
-            let mut video_chain: Vec<String> = Vec::new();
+            for filter in &self.filters {
+                match filter {
+                    PipelineFilter::Video(video_filter) => {
+                        if let Some(arg) = video_filter.as_arg() {
+                            pending.push(arg);
+                        }
+                    }
+                    PipelineFilter::Overlay(overlay) => {
+                        let Some(sub_in) = subtitle_label else {
+                            continue;
+                        };
 
-            for filter in self.filters.iter() {
-                if let PipelineFilter::Video(video_filter) = filter
-                    && let Some(arg) = video_filter.as_arg()
-                {
-                    video_chain.push(arg);
+                        let main_label = format!("v_m{}", overlay_num);
+                        if !pending.is_empty() {
+                            flush(&mut filter_chains, &mut pending, &current_in, &main_label);
+                            current_in = main_label;
+                        }
+
+                        let sec_args: Vec<String> = overlay
+                            .secondary
+                            .iter()
+                            .filter_map(|f| f.as_arg())
+                            .collect();
+                        let sec_ref = if sec_args.is_empty() {
+                            sub_in.to_owned()
+                        } else {
+                            let sec_label = format!("v_s{}", overlay_num);
+                            filter_chains.push(format!(
+                                "[{}]{}[{}]",
+                                sub_in,
+                                sec_args.join(","),
+                                sec_label
+                            ));
+                            sec_label
+                        };
+
+                        let out_label = format!("v_o{}", overlay_num);
+                        if let Some(arg) = overlay.kind.as_arg() {
+                            filter_chains.push(format!(
+                                "[{}][{}]{}[{}]",
+                                current_in, sec_ref, arg, out_label
+                            ));
+                        }
+                        current_in = out_label;
+                        overlay_num += 1;
+                    }
+                    _ => {}
                 }
             }
 
-            filter_chain.push_str(&video_chain.join(","));
-
-            self.video_label = String::from("[v]");
-            filter_chain.push_str(&self.video_label);
-
-            filter_chains.push(filter_chain)
+            if !pending.is_empty() {
+                flush(&mut filter_chains, &mut pending, &current_in, "v");
+                self.video_label = String::from("[v]");
+            } else {
+                self.video_label = format!("[{}]", current_in);
+            }
         }
 
         self.complex_filter = filter_chains.join(";");
@@ -348,6 +480,11 @@ impl FilterChain {
 
     pub(crate) fn video_label(&self) -> &str {
         &self.video_label
+    }
+
+    pub(crate) fn subtitle_label(&self) -> Option<&str> {
+        //self.subtitle_label.as_deref()
+        None
     }
 
     pub(crate) fn as_arg(&self) -> ArgVec {
@@ -527,7 +664,7 @@ mod tests {
             &FrameSurface::Vaapi,
             &Some(PixelFormat::Nv12),
         );
-        chain.build("0:v", "0:v");
+        chain.build("0:a", "0:v", None);
 
         let args = chain.as_arg();
         assert_eq!(args.len(), 2);
@@ -810,7 +947,7 @@ mod tests {
             &FrameSurface::Vaapi,
             &Some(PixelFormat::Nv12),
         );
-        chain.build("0:v", "0:v");
+        chain.build("0:a", "0:v", None);
 
         let args = chain.as_arg();
         assert_eq!(args.len(), 2);

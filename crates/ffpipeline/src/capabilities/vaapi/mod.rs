@@ -21,6 +21,7 @@ pub struct VaapiCapabilities {
     pub(crate) can_hdr_to_sdr_tonemap: HashSet<FourCC>,
     /// FourCC of supported HDR->HDR tonemap formats.   
     pub(crate) can_hdr_to_hdr_tonemap: HashSet<FourCC>,
+    pub(crate) can_overlay: bool,
 }
 
 impl VaapiCapabilities {
@@ -101,7 +102,12 @@ impl VaapiCapabilities {
         match pixel_format {
             PixelFormat::Nv12 | PixelFormat::Yuv420p => Some(VA_FOURCC_NV12),
             PixelFormat::P010le | PixelFormat::Yuv420p10le => Some(VA_FOURCC_P010),
+            PixelFormat::Bgra => Some(VA_FOURCC_BGRA),
             _ => None,
         }
+    }
+
+    pub fn can_overlay(&self) -> bool {
+        self.can_overlay
     }
 }

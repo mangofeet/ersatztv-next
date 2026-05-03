@@ -25,7 +25,17 @@
         "width_percent": 10,
         "horizontal_margin_percent": 2,
         "vertical_margin_percent": 2,
-        "opacity_percent": 80
+        "opacity_percent": 80,
+        "timing": {
+          "timing_type": "periodic",
+          "clock": "wall",
+          "frequency_ms": 300000,
+          "phase_offset_ms": 0,
+          "disable_after_ms": 3000000,
+          "fade_in_ms": 1000,
+          "hold_ms": 8000,
+          "fade_out_ms": 1000
+        }
       }
     },
     {

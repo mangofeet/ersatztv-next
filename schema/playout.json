@@ -203,8 +203,100 @@
           "minimum": 0,
           "maximum": 100,
           "description": "Opacity as a percent (0–100). Omit for fully opaque (100)."
+        },
+        "timing": {
+          "description": "Visibility schedule for the watermark. Omit for an always-on watermark.",
+          "oneOf": [
+            {
+              "$ref": "#/definitions/WatermarkTiming"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
+    },
+    "WatermarkTiming": {
+      "description": "Controls when the watermark is shown. Exactly one variant, distinguished by `timing_type`.",
+      "discriminator": {
+        "propertyName": "timing_type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/definitions/PeriodicTiming"
+        }
+      ]
+    },
+    "PeriodicTiming": {
+      "type": "object",
+      "description": "Cyclical visibility: the watermark fades in, holds, and fades out once every `frequency_ms`. Cycle length is start-to-start, so `fade_in_ms + hold_ms + fade_out_ms` must be ≤ `frequency_ms`.",
+      "required": [
+        "timing_type",
+        "clock",
+        "frequency_ms",
+        "hold_ms"
+      ],
+      "properties": {
+        "timing_type": {
+          "type": "string",
+          "const": "periodic"
+        },
+        "clock": {
+          "description": "Reference clock used to position cycles.",
+          "$ref": "#/definitions/PeriodicClock"
+        },
+        "frequency_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Period of the cycle, start-to-start, in milliseconds."
+        },
+        "phase_offset_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Shift the cycle by this many milliseconds. With `clock: wall` and `frequency_ms: 300000`, an offset of 0 puts an appearance start at every wall-clock 5-minute boundary; 120000 shifts to :02, :07, :12, etc. Omit for 0."
+        },
+        "disable_after_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Cap on the time, measured from the start of the playout item in milliseconds, during which new appearances are allowed to begin. An appearance already in progress at the cap is allowed to fade out cleanly. Omit for no cap."
+        },
+        "fade_in_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Fade-in duration in milliseconds. Omit for 1000; set to 0 for a hard cut in."
+        },
+        "hold_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time held fully visible between fade-in and fade-out, in milliseconds."
+        },
+        "fade_out_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Fade-out duration in milliseconds. Omit for 1000; set to 0 for a hard cut out."
+        }
+      }
+    },
+    "PeriodicClock": {
+      "type": "string",
+      "description": "Reference clock for periodic timing. `wall` aligns cycles to wall-clock time (so a viewer tuning in at any moment sees the same phase). `content` measures from the start of the containing playout item.",
+      "enum": [
+        "wall",
+        "content"
+      ]
     },
     "WatermarkLocation": {
       "type": "string",

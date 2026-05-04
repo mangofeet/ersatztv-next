@@ -1,11 +1,14 @@
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use ersatztv_channel::error::ChannelError;
-use ffpipeline::input::{InputSource, ProbedInput};
-use ffpipeline::probe::{CodecType, ProbeResultStream, ProbeResultVideoStream};
 use tempfile::NamedTempFile;
 use tokio::process::Command;
+
+use crate::ArgVec;
+use crate::error::FFPipelineError;
+use crate::input::{FfmpegInputArgs, InputSource, ProbedInput};
+use crate::probe::{CodecType, ProbeResultStream, ProbeResultVideoStream};
 
 #[derive(Clone)]
 pub struct Cue {
@@ -14,68 +17,72 @@ pub struct Cue {
     pub text: String,
 }
 
-pub(crate) async fn convert_to_vtt(
+pub async fn convert_to_vtt(
     ffmpeg_path: &PathBuf,
     input: &ProbedInput,
     subtitle_stream: &ProbeResultVideoStream,
-) -> Result<NamedTempFile, ChannelError> {
-    match &input.input_source {
-        InputSource::Local(local) => {
-            // find index of subtitle *within subtitle streams*
-            let subtitle_index = input
-                .probe_result
-                .streams
-                .iter()
-                .filter_map(|s| match s {
-                    ProbeResultStream::Video(v) if v.codec_type == CodecType::Subtitle => Some(v),
-                    _ => None,
-                })
-                .position(|v| v.stream_index == subtitle_stream.stream_index)
-                .ok_or(ChannelError::FailedToConvertSubtitle)?;
+) -> Result<NamedTempFile, FFPipelineError> {
+    let input_path = match &input.input_source {
+        InputSource::Local(local) => Ok(local.path.clone()),
+        InputSource::Http(http) => Ok(http.uri.clone()),
+        InputSource::Lavfi(_) => Err(FFPipelineError::FailedToConvertSubtitle),
+    }?;
 
-            let temp_file = NamedTempFile::with_suffix(".vtt")?;
-            let file_name = temp_file.path().to_string_lossy();
-            let mut ffmpeg = Command::new(ffmpeg_path)
-                .args([
-                    "-nostdin",
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-i",
-                    local.path.as_str(),
-                    "-map",
-                    &format!("0:s:{}", subtitle_index),
-                    "-c:s",
-                    "webvtt",
-                    "-y",
-                    &file_name,
-                ])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-                .map_err(|_| ChannelError::FailedToConvertSubtitle)?;
+    // find index of subtitle *within subtitle streams*
+    let subtitle_index = input
+        .probe_result
+        .streams
+        .iter()
+        .filter_map(|s| match s {
+            ProbeResultStream::Video(v) if v.codec_type == CodecType::Subtitle => Some(v),
+            _ => None,
+        })
+        .position(|v| v.stream_index == subtitle_stream.stream_index)
+        .ok_or(FFPipelineError::FailedToConvertSubtitle)?;
 
-            let result = ffmpeg.wait().await?;
-            if result.success() {
-                Ok(temp_file)
-            } else {
-                Err(ChannelError::FailedToConvertSubtitle)
-            }
-        }
-        _ => Err(ChannelError::FailedToConvertSubtitle),
+    let temp_file =
+        NamedTempFile::with_suffix(".vtt").map_err(|_| FFPipelineError::FailedToConvertSubtitle)?;
+    let file_name = temp_file.path().to_string_lossy().into_owned();
+
+    let mut args: ArgVec = args!["-nostdin", "-hide_banner", "-loglevel", "error"];
+    args.extend(input.input_source.args_for_input());
+    args.extend(args![
+        "-i",
+        input_path,
+        "-map",
+        format!("0:s:{}", subtitle_index),
+        "-c:s",
+        "webvtt",
+        "-y",
+        file_name
+    ]);
+
+    let mut ffmpeg = Command::new(ffmpeg_path)
+        .args(args.iter().map(Cow::as_ref))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|_| FFPipelineError::FailedToConvertSubtitle)?;
+
+    let result = ffmpeg
+        .wait()
+        .await
+        .map_err(|_| FFPipelineError::FailedToConvertSubtitle)?;
+    if result.success() {
+        Ok(temp_file)
+    } else {
+        Err(FFPipelineError::FailedToConvertSubtitle)
     }
 }
 
-pub(crate) async fn parse_file(path: &Path) -> Result<Vec<Cue>, ChannelError> {
-    if path.exists() {
-        let contents = tokio::fs::read_to_string(&path).await?;
-        return parse_internal(&contents);
-    }
-
-    Err(ChannelError::FailedToParseSubtitle)
+pub async fn parse_file(path: &Path) -> Result<Vec<Cue>, FFPipelineError> {
+    let contents = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|_| FFPipelineError::FailedToParseSubtitle)?;
+    parse_internal(&contents)
 }
 
-pub(crate) fn format_vtt_ts(duration: Duration) -> String {
+pub fn format_vtt_ts(duration: Duration) -> String {
     format!(
         "{:02}:{:02}:{:02}.{:03}",
         duration.as_secs() / 3600,
@@ -92,7 +99,7 @@ enum ParseState {
     Cue,
 }
 
-fn parse_internal(body: &str) -> Result<Vec<Cue>, ChannelError> {
+fn parse_internal(body: &str) -> Result<Vec<Cue>, FFPipelineError> {
     let mut result = Vec::new();
     let mut parse_state = ParseState::Header;
     let mut start = Duration::ZERO;

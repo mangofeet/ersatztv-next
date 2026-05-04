@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use ersatztv_channel::error::ChannelError;
@@ -13,7 +14,7 @@ const MIN_SEGMENTS: usize = 4;
 
 #[derive(Clone)]
 pub struct SubtitleSource {
-    pub cues: Vec<Cue>,
+    pub cues: Arc<Vec<Cue>>,
     pub(crate) cursor: usize,
     pub next_segment_source_offset: Duration,
 }
@@ -31,6 +32,7 @@ pub struct PlaylistManager {
     segments: VecDeque<Segment>,
     discontinuity_before: HashSet<String>,
     media_sequence: u64,
+    last_served_media_sequence: u64,
     discontinuity_sequence: u64,
     target_duration: u32,
     target_duration_f64: f64,
@@ -79,6 +81,7 @@ impl PlaylistManager {
             segments: VecDeque::new(),
             discontinuity_before: HashSet::new(),
             media_sequence: 0,
+            last_served_media_sequence: 0,
             discontinuity_sequence: 0,
             target_duration,
             target_duration_f64: target_duration as f64,
@@ -251,7 +254,7 @@ impl PlaylistManager {
     }
 
     fn generate_playlist(
-        &self,
+        &mut self,
         path_map: fn(&str) -> String,
         max_segments: Option<usize>,
     ) -> Result<String, ChannelError> {
@@ -264,12 +267,21 @@ impl PlaylistManager {
             Some(max) => {
                 let anchor = OffsetDateTime::now_utc()
                     - Duration::from_secs(ffpipeline::pipeline::SEGMENT_SECONDS as u64 * 5u64);
-                let start = self
+
+                let candidate_skip = self
                     .segments
                     .iter()
                     .position(|s| s.program_date_time >= anchor)
-                    .unwrap_or(0);
-                (start, max)
+                    .unwrap_or_else(|| self.segments.len().saturating_sub(max));
+
+                // monotonic clamp
+                let candidate_ms = self.media_sequence + candidate_skip as u64;
+                let clamped_ms = candidate_ms.max(self.last_served_media_sequence);
+                self.last_served_media_sequence = clamped_ms;
+
+                let skip = (clamped_ms - self.media_sequence) as usize;
+                let skip = skip.min(self.segments.len());
+                (skip, max)
             }
             None => (0, self.segments.len()),
         };

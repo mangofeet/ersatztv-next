@@ -331,6 +331,7 @@ pub struct WatermarkInput {
     pub stream_index: Option<u32>,
     pub location: WatermarkLocation,
     pub width_percent: Option<f32>,
+    pub within_source_content: Option<bool>,
     pub horizontal_margin_percent: Option<f32>,
     pub vertical_margin_percent: Option<f32>,
     pub opacity_percent: Option<f32>,
@@ -388,70 +389,71 @@ impl WatermarkInput {
 
     pub(crate) fn frame_location(
         &self,
+        source_content_size: &FrameSize,
         scaled_size: &FrameSize,
         video_size: &FrameSize,
     ) -> FramePoint {
-        let horizontal_margin = f32::round(
-            self.horizontal_margin_percent.unwrap_or(0f32) / 100f32 * video_size.width as f32,
-        ) as u32;
-        let vertical_margin = f32::round(
-            self.vertical_margin_percent.unwrap_or(0f32) / 100f32 * video_size.height as f32,
-        ) as u32;
+        let (h_ref, v_ref, h_pad_offset, v_pad_offset) =
+            if self.within_source_content.unwrap_or(false) {
+                let h_pad = video_size.width.saturating_sub(source_content_size.width);
+                let v_pad = video_size.height.saturating_sub(source_content_size.height);
+                (
+                    source_content_size.width,
+                    source_content_size.height,
+                    h_pad / 2,
+                    v_pad / 2,
+                )
+            } else {
+                (video_size.width, video_size.height, 0, 0)
+            };
+
+        let h_pct_margin =
+            f32::round(self.horizontal_margin_percent.unwrap_or(0f32) / 100f32 * h_ref as f32)
+                as u32;
+        let v_pct_margin =
+            f32::round(self.vertical_margin_percent.unwrap_or(0f32) / 100f32 * v_ref as f32) as u32;
+
+        let center_x = video_size.width.saturating_sub(scaled_size.width) / 2;
+        let center_y = video_size.height.saturating_sub(scaled_size.height) / 2;
+        let right_anchor = video_size.width.saturating_sub(scaled_size.width);
+        let bottom_anchor = video_size.height.saturating_sub(scaled_size.height);
 
         match self.location {
             WatermarkLocation::TopLeft => FramePoint {
-                x: horizontal_margin,
-                y: vertical_margin,
+                x: h_pct_margin + h_pad_offset,
+                y: v_pct_margin + v_pad_offset,
             },
             WatermarkLocation::TopCenter => FramePoint {
-                x: video_size.width.saturating_sub(scaled_size.width) / 2 + horizontal_margin,
-                y: vertical_margin,
+                x: center_x + h_pct_margin,
+                y: v_pct_margin + v_pad_offset,
             },
             WatermarkLocation::TopRight => FramePoint {
-                x: video_size
-                    .width
-                    .saturating_sub(scaled_size.width)
-                    .saturating_sub(horizontal_margin),
-                y: vertical_margin,
+                x: right_anchor.saturating_sub(h_pct_margin + h_pad_offset),
+                y: v_pct_margin + v_pad_offset,
             },
             WatermarkLocation::CenterLeft => FramePoint {
-                x: horizontal_margin,
-                y: video_size.height.saturating_sub(scaled_size.height) / 2 + vertical_margin,
+                x: h_pct_margin + h_pad_offset,
+                y: center_y + v_pct_margin,
             },
             WatermarkLocation::Center => FramePoint {
-                x: video_size.width.saturating_sub(scaled_size.width) / 2 + horizontal_margin,
-                y: video_size.height.saturating_sub(scaled_size.height) / 2 + vertical_margin,
+                x: center_x + h_pct_margin,
+                y: center_y + v_pct_margin,
             },
             WatermarkLocation::CenterRight => FramePoint {
-                x: video_size
-                    .width
-                    .saturating_sub(scaled_size.width)
-                    .saturating_sub(horizontal_margin),
-                y: video_size.height.saturating_sub(scaled_size.height) / 2 + vertical_margin,
+                x: right_anchor.saturating_sub(h_pct_margin + h_pad_offset),
+                y: center_y + v_pct_margin,
             },
             WatermarkLocation::BottomLeft => FramePoint {
-                x: horizontal_margin,
-                y: video_size
-                    .height
-                    .saturating_sub(scaled_size.height)
-                    .saturating_sub(vertical_margin),
+                x: h_pct_margin + h_pad_offset,
+                y: bottom_anchor.saturating_sub(v_pct_margin + v_pad_offset),
             },
             WatermarkLocation::BottomCenter => FramePoint {
-                x: video_size.width.saturating_sub(scaled_size.width) / 2 + horizontal_margin,
-                y: video_size
-                    .height
-                    .saturating_sub(scaled_size.height)
-                    .saturating_sub(vertical_margin),
+                x: center_x + h_pct_margin,
+                y: bottom_anchor.saturating_sub(v_pct_margin + v_pad_offset),
             },
             WatermarkLocation::BottomRight => FramePoint {
-                x: video_size
-                    .width
-                    .saturating_sub(scaled_size.width)
-                    .saturating_sub(horizontal_margin),
-                y: video_size
-                    .height
-                    .saturating_sub(scaled_size.height)
-                    .saturating_sub(vertical_margin),
+                x: right_anchor.saturating_sub(h_pct_margin + h_pad_offset),
+                y: bottom_anchor.saturating_sub(v_pct_margin + v_pad_offset),
             },
         }
     }

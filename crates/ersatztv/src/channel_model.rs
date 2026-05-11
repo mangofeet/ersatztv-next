@@ -8,6 +8,9 @@ pub struct ChannelModel {
     name: String,
     config_path: PathBuf,
     output_folder: PathBuf,
+    tvg_id: String,
+    logo: Option<String>,
+    group: Option<String>,
 }
 
 impl ChannelModel {
@@ -44,6 +47,9 @@ impl ChannelModel {
             name: channel.name.clone(),
             config_path: channel_config,
             output_folder: output_folder.join(&channel.number),
+            tvg_id: channel.tvg_id.unwrap_or_else(|| channel.number.clone()),
+            logo: channel.logo.clone(),
+            group: channel.group.clone(),
         })
     }
 
@@ -61,5 +67,17 @@ impl ChannelModel {
 
     pub fn output_folder(&self) -> &Path {
         self.output_folder.as_path()
+    }
+
+    pub fn tvg_id(&self) -> &str {
+        self.tvg_id.as_str()
+    }
+
+    pub fn logo(&self) -> Option<&str> {
+        self.logo.as_deref()
+    }
+
+    pub fn group(&self) -> Option<&str> {
+        self.group.as_deref()
     }
 }

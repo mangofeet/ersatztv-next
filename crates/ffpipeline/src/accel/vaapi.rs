@@ -1,7 +1,7 @@
 use crate::ArgVec;
 use crate::accel::opencl::{PadOpencl, TonemapOpencl};
 use crate::capabilities::opencl::OpenCLCapabilities;
-use crate::capabilities::vaapi::VaapiCapabilities;
+use crate::capabilities::vaapi::{RateControlMode, VaapiCapabilities};
 use crate::ffmpeg_info::{FfmpegInfo, KnownHardwareAccel, KnownVideoFilter};
 use crate::frame_size::FrameSize;
 use crate::hw_accel::{HwAccel, HwDecoder};
@@ -51,7 +51,10 @@ impl HwAccel for Vaapi {
                 force_original_aspect_ratio,
                 ..
             }) if ffmpeg_info.has_video_filter(&KnownVideoFilter::ScaleVaapi)
-                && !current_state.pixel_format.has_alpha() =>
+                && !current_state.pixel_format.has_alpha()
+                && self
+                    .capabilities
+                    .vpp_supports_format(&current_state.pixel_format) =>
             {
                 ScaleVaapi {
                     size: *size,
@@ -67,7 +70,13 @@ impl HwAccel for Vaapi {
                 }
                 if let Some(hw_filter) = ffmpeg_info.find_best_fit(pad_options.as_slice()) {
                     match hw_filter {
-                        KnownVideoFilter::PadVaapi => PadVaapi { size: *size }.into(),
+                        KnownVideoFilter::PadVaapi
+                            if self
+                                .capabilities
+                                .vpp_supports_format(&current_state.pixel_format) =>
+                        {
+                            PadVaapi { size: *size }.into()
+                        }
                         KnownVideoFilter::PadOpencl => PadOpencl { size: *size }.into(),
                         _ => video_filter.clone(),
                     }
@@ -80,7 +89,10 @@ impl HwAccel for Vaapi {
                 input_is_interlaced,
                 ..
             }) if *input_is_interlaced
-                && ffmpeg_info.has_video_filter(&KnownVideoFilter::DeinterlaceVaapi) =>
+                && ffmpeg_info.has_video_filter(&KnownVideoFilter::DeinterlaceVaapi)
+                && self
+                    .capabilities
+                    .vpp_supports_format(&current_state.pixel_format) =>
             {
                 DeinterlaceVaapi {
                     mode: filter_options.deinterlace_vaapi.mode.clone(),
@@ -182,25 +194,40 @@ impl HwAccel for Vaapi {
     fn codec_for_format(
         &self,
         format: &VideoFormat,
+        bit_depth: u8,
         video_size: Option<FrameSize>,
     ) -> Option<VideoCodec> {
+        let force_cqp = self.capabilities.rate_control_mode_for(format, bit_depth)
+            == Some(RateControlMode::Cqp);
+
         match format {
-            VideoFormat::H264 => Some(VideoCodec {
-                codec_name: "h264_vaapi",
-                options: &[],
-                preferred_pixel_format_8bit: Some(PixelFormat::Nv12),
-                preferred_pixel_format_10bit: Some(PixelFormat::P010le),
-                preferred_surface: FrameSurface::Vaapi,
-            }),
+            VideoFormat::H264 => {
+                let options = if force_cqp {
+                    args!["-rc_mode", "1"]
+                } else {
+                    Vec::new()
+                };
+
+                Some(VideoCodec {
+                    codec_name: "h264_vaapi",
+                    options,
+                    preferred_pixel_format_8bit: Some(PixelFormat::Nv12),
+                    preferred_pixel_format_10bit: Some(PixelFormat::P010le),
+                    preferred_surface: FrameSurface::Vaapi,
+                })
+            }
             VideoFormat::Hevc => {
-                let mut options: &'static [&'static str] = &[];
+                let mut options = Vec::new();
+                if force_cqp {
+                    options.extend(args!["-rc_mode", "1"]);
+                }
 
                 // WORKAROUND: RadeonSI doesn't always output appropriate crop
                 // metadata with HEVC encoder; it doesn't hurt anything to always specify
                 if self.driver == VaapiDriver::RadeonSI
                     && video_size.map(|s| s.height) == Some(1080)
                 {
-                    options = &["-bsf:v", "hevc_metadata=crop_bottom=8"];
+                    options.extend(args!["-bsf:v", "hevc_metadata=crop_bottom=8"]);
                 }
 
                 Some(VideoCodec {
@@ -299,7 +326,16 @@ impl HwAccel for Vaapi {
         }
     }
 
-    fn supports_pixel_format(&self, pixel_format: &PixelFormat) -> bool {
+    fn accepts_upload_format(&self, pixel_format: &PixelFormat) -> bool {
+        // upload works even when vpp is unsupported for a format, so match
+        // the canonical VA surface formats first.
+        // it is safe to allow 10 bit here because encoder is already checked,
+        // e.g. 10-bit software encoder will never try to upload
+        matches!(pixel_format, PixelFormat::Nv12 | PixelFormat::P010le)
+            || self.capabilities.vpp_supports_format(pixel_format)
+    }
+
+    fn can_convert_pixel_format(&self, pixel_format: &PixelFormat) -> bool {
         self.capabilities.vpp_supports_format(pixel_format)
     }
 }
@@ -523,10 +559,11 @@ mod tests {
             capabilities: VaapiCapabilities {
                 vendor: String::from("test"),
                 supported: HashSet::new(),
-                vpp_pixel_formats: HashSet::new(),
+                vpp_pixel_formats: HashSet::from([libva_sys::VA_FOURCC_NV12]),
                 can_hdr_to_sdr_tonemap: HashSet::new(),
                 can_hdr_to_hdr_tonemap: HashSet::new(),
                 can_overlay: false,
+                rate_control: HashMap::new(),
             },
             opencl_capabilities: OpenCLCapabilities {
                 platform_count: 0,

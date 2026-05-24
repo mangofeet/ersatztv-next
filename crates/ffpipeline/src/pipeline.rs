@@ -368,12 +368,7 @@ impl Pipeline {
         filters.extend(video_decoder.filters());
 
         filters.extend([
-            PipelineFilter::Video(
-                LoopFilter {
-                    codec: video_stream.codec.to_owned(),
-                }
-                .into(),
-            ),
+            PipelineFilter::Video(LoopFilter { is_still_image }.into()),
             PipelineFilter::Video(
                 ToneMapFilter {
                     algorithm: final_output_settings.filter_options.tonemap.tonemap.clone(),
@@ -434,7 +429,11 @@ impl Pipeline {
                 input_source: input_settings.video_input.input_source.to_owned(),
                 index: video_stream.stream_index,
                 path: input_settings.video_input.probe_result.path.to_owned(),
-                seek: input_settings.video_input.in_point,
+                seek: if is_still_image {
+                    Duration::ZERO
+                } else {
+                    input_settings.video_input.in_point
+                },
                 realtime: final_output_settings.realtime && !final_output_settings.is_live,
                 decoder: video_decoder,
             },

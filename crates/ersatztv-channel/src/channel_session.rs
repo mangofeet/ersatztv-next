@@ -25,6 +25,7 @@ use ffpipeline::pipeline::{AudioFormat, Hz, Kbps, PtsOffset, SEGMENT_SECONDS, Vi
 use ffpipeline::probe::{ProbeResult, ProbeResultVideoStream, Probeable};
 use ffpipeline::web_vtt::Cue;
 use ffpipeline::{pipeline, probe};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, USER_AGENT};
 use time::OffsetDateTime;
 use tokio::io::AsyncBufReadExt;
 use tokio::sync::Mutex;
@@ -87,6 +88,7 @@ pub struct ChannelSession {
     timeout_notify: Arc<tokio::sync::Notify>,
 
     cached_subtitles: Option<(String, Arc<Vec<Cue>>)>,
+    dynamic_http_client: reqwest::Client,
 }
 
 impl ChannelSession {
@@ -158,6 +160,10 @@ impl ChannelSession {
 
         let local_proxy_server = LocalProxyServer::start().await?;
 
+        let dynamic_http_client = reqwest::Client::builder()
+            .build()
+            .map_err(|e| ChannelError::ChannelStartup(format!("http client: {e}")))?;
+
         Ok(ChannelSession {
             channel_config,
             playout_loader,
@@ -176,6 +182,7 @@ impl ChannelSession {
             state: ChannelSessionState::SeekAndWorkAhead,
             timeout_notify: Arc::new(tokio::sync::Notify::new()),
             cached_subtitles: None,
+            dynamic_http_client,
         })
     }
 
@@ -320,10 +327,22 @@ impl ChannelSession {
             Err(e) => log::debug!("failed to scan pts time: {e}"),
         }
 
-        let current_item_result = self
+        let mut current_item_result = self
             .playout_loader
             .get_current_item(&self.transcoded_until)
             .await;
+
+        if let Ok(
+            item @ PlayoutItem {
+                source: Some(PlayoutItemSource::Dynamic { .. }),
+                ..
+            },
+        ) = current_item_result
+        {
+            current_item_result = self
+                .resolve_dynamic_item(&self.transcoded_until, &item)
+                .await;
+        }
 
         let current_item = match current_item_result {
             Ok(playout_item) => playout_item,
@@ -815,6 +834,9 @@ impl ChannelSession {
                     },
                 }))
             }
+            PlayoutItemSource::Dynamic { .. } => {
+                Err(ChannelError::DynamicSourceCannotBePlayedDirectly)
+            }
         }
     }
 
@@ -927,6 +949,147 @@ impl ChannelSession {
             }),
             watermark: None,
         }
+    }
+
+    async fn resolve_dynamic_item(
+        &self,
+        start: &OffsetDateTime,
+        dynamic_item: &PlayoutItem,
+    ) -> Result<PlayoutItem, ChannelError> {
+        let Some(PlayoutItemSource::Dynamic {
+            uri,
+            headers,
+            user_agent,
+            timeout_us,
+        }) = &dynamic_item.source
+        else {
+            return Err(ChannelError::DynamicSourceRequired);
+        };
+
+        let expanded_uri = expand_template(uri)?;
+        let expanded_headers: Vec<String> = headers
+            .iter()
+            .flatten()
+            .map(|h| expand_template(h))
+            .collect::<Result<Vec<_>, _>>()?;
+        let expanded_ua = user_agent.as_deref().map(expand_template).transpose()?;
+
+        let mut header_map = HeaderMap::new();
+        for h in &expanded_headers {
+            let Some((name, value)) = h.split_once(':') else {
+                continue;
+            };
+            let name = HeaderName::from_bytes(name.trim().as_bytes())
+                .map_err(|e| ChannelError::DynamicSourceFailure(format!("bad header name: {e}")))?;
+            let value = HeaderValue::from_str(value.trim()).map_err(|e| {
+                ChannelError::DynamicSourceFailure(format!("bad header value: {e}"))
+            })?;
+            header_map.insert(name, value);
+        }
+        if let Some(ua) = expanded_ua.as_deref() {
+            header_map.insert(
+                USER_AGENT,
+                HeaderValue::from_str(ua).map_err(|e| {
+                    ChannelError::DynamicSourceFailure(format!("bad user agent: {e}"))
+                })?,
+            );
+        }
+
+        header_map.insert(
+            HeaderName::from_static("x-etv-dynamic-id"),
+            HeaderValue::from_str(&dynamic_item.id).map_err(|e| {
+                ChannelError::DynamicSourceFailure(format!("bad dynamic source id {e}"))
+            })?,
+        );
+
+        header_map.insert(
+            HeaderName::from_static("x-etv-channel"),
+            HeaderValue::from_str(self.channel_config.number()).map_err(|e| {
+                ChannelError::DynamicSourceFailure(format!("bad channel number {e}"))
+            })?,
+        );
+
+        header_map.insert(
+            HeaderName::from_static("x-etv-now"),
+            HeaderValue::from_str(&start.format(&time::format_description::well_known::Rfc3339)?)
+                .map_err(|e| ChannelError::DynamicSourceFailure(format!("bad time value: {e}")))?,
+        );
+
+        header_map.insert(
+            HeaderName::from_static("x-etv-until"),
+            HeaderValue::from_str(
+                &dynamic_item
+                    .finish
+                    .format(&time::format_description::well_known::Rfc3339)?,
+            )
+            .map_err(|e| ChannelError::DynamicSourceFailure(format!("bad time value: {e}")))?,
+        );
+
+        let timeout = timeout_us
+            .map(Duration::from_micros)
+            .unwrap_or_else(|| Duration::from_secs(10));
+
+        let mut item: PlayoutItem = self
+            .dynamic_http_client
+            .get(&expanded_uri)
+            .headers(header_map)
+            .timeout(timeout)
+            .send()
+            .await
+            .map_err(|e| ChannelError::DynamicSourceFailure(e.to_string()))?
+            .error_for_status()
+            .map_err(|e| ChannelError::DynamicSourceFailure(e.to_string()))?
+            .json()
+            .await
+            .map_err(|e| ChannelError::DynamicSourceFailure(e.to_string()))?;
+
+        // always start at the requested time
+        if item.start != *start {
+            let duration = item.finish - item.start;
+            item.start = *start;
+            item.finish = *start + duration;
+        }
+
+        // always clamp the finish time
+        if item.finish > dynamic_item.finish {
+            item.finish = dynamic_item.finish;
+        }
+
+        if item.finish <= item.start {
+            return Err(ChannelError::DynamicSourceNoRemainingTime);
+        }
+
+        if let Some(PlayoutItemSource::Dynamic { .. }) = item.source {
+            return Err(ChannelError::DynamicSourceCannotRecurse);
+        }
+
+        if let Some(tracks) = &item.tracks {
+            if let Some(audio) = &tracks.audio
+                && let Some(PlayoutItemSource::Dynamic { .. }) = audio.source
+            {
+                return Err(ChannelError::DynamicSourceCannotRecurse);
+            }
+
+            if let Some(video) = &tracks.video
+                && let Some(PlayoutItemSource::Dynamic { .. }) = video.source
+            {
+                return Err(ChannelError::DynamicSourceCannotRecurse);
+            }
+
+            if let Some(subtitle) = &tracks.subtitle
+                && let Some(PlayoutItemSource::Dynamic { .. }) = subtitle.source
+            {
+                return Err(ChannelError::DynamicSourceCannotRecurse);
+            }
+        }
+
+        if let Some(watermark) = &item.watermark
+            && let PlayoutItemSource::Dynamic { .. } = watermark.source
+        {
+            return Err(ChannelError::DynamicSourceCannotRecurse);
+        }
+
+        Ok(item)
     }
 
     fn resolve_source<F>(item: &PlayoutItem, pick: F) -> Option<PlayoutItemSource>
